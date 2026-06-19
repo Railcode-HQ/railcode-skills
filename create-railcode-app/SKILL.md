@@ -64,8 +64,8 @@ cd apps/<app>
 npm run build
 ```
 
-When changing the CLI, SDK, backend, deploy scripts, or platform behavior, run the relevant project checks in addition to the app build. Typical checks are `npm run build` in changed Node packages and, for backend changes, `cd backend && uv run pytest && uv run ruff check`.
+When changing the CLI, SDK, backend, deployment workflow, or platform behavior, run the relevant project checks in addition to the app build. Typical checks are `npm run build` in changed Node packages and, for backend changes, `cd backend && uv run pytest && uv run ruff check`.
 
 ## Deployment Rule Of Thumb
 
-Use `railcode deploy` from the app directory for day-to-day static app publishes. Use `./deploy/deploy apps` when deploying all built apps from the platform repo. Use `./deploy/deploy backend`, `caddy`, or `all` only when changing platform infrastructure, backend routes, the admin UI, Caddy config, or the bundled SDK.
+Use `railcode deploy` from the app directory for day-to-day static app publishes. Platform updates use the Docker Compose Ansible playbook in `deploy/ansible/`, either directly or through the GitHub Action on pushes to `main`.

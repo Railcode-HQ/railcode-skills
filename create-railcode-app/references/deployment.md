@@ -65,29 +65,28 @@ signed-in users. The CLI prints the live app URL after upload.
 For root app repos, deploy publishes `dist/`. Legacy `apps/<app>` workspaces
 can still publish `app-bundles/<app>/`.
 
-## Platform Repo Deploy Script
+## Platform Updates
 
-Use `./deploy/deploy` for platform-level deployment from the Railcode source repo:
+Railcode platform servers are Docker Compose installs. Update a server from the
+source repository with the Ansible playbook:
 
 ```bash
-cp deploy/config.env.example deploy/config.env
-./deploy/deploy apps
-./deploy/deploy backend
-./deploy/deploy caddy
-./deploy/deploy all
-./deploy/deploy logs
-./deploy/deploy ssh
+ansible-playbook -i deploy/ansible/inventory.ini deploy/ansible/update-railcode.yml \
+  -e railcode_health_url=https://auth.<BASE_DOMAIN>/healthz
 ```
 
-Commands:
+The playbook backs up local config/data, updates the checkout from GitHub,
+validates Compose, runs `docker compose up -d --build --remove-orphans`, and
+waits for the health check.
 
-- `apps`: rsync all `app-bundles/` folders to `/srv/apps`.
-- `backend` or `api`: build `frontend`, build `sdk`, rsync `backend/` to `/opt/railcode-api`, run `uv sync`, restart `railcode-api`.
-- `caddy`: sync `Caddyfile` and reload Caddy.
-- `all`: backend, caddy, then apps.
-- `logs`: tail `sudo journalctl -u railcode-api -f`.
+The repository also ships `.github/workflows/deploy-railcode.yml`, which runs
+the project checks and deploys the pushed `main` commit with the same playbook.
+Configure the workflow with `RAILCODE_HOST`, `RAILCODE_SSH_USER`,
+`RAILCODE_SSH_PRIVATE_KEY`, `RAILCODE_SSH_KNOWN_HOSTS`, and
+`RAILCODE_HEALTH_URL`.
 
-Do not use a backend deploy for an app-only change unless the app change depends on SDK/backend behavior that has also changed.
+Do not use a platform update for an app-only change unless the app change
+depends on SDK/backend behavior that has also changed.
 
 ## Local Docker Flow
 
