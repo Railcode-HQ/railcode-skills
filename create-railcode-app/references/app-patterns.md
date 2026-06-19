@@ -7,25 +7,24 @@ Use this reference when implementing a Railcode app UI, data model, SDK calls, o
 `railcode init <tool>` creates:
 
 ```text
-apps/<tool>/
-  railcode.json
-  package.json
-  vite.config.ts
-  src/
-    App.tsx
-    main.tsx
-    styles.css
-    lib/
-      load-sdk.ts
-      railcode.ts
-      format.ts
-    store/
-      app-store.ts
-    components/
-      Button.tsx
-      Panel.tsx
-      StatusPill.tsx
-tools/<tool>/
+railcode.json
+package.json
+vite.config.ts
+src/
+  App.tsx
+  main.tsx
+  styles.css
+  lib/
+    load-sdk.ts
+    railcode.ts
+    format.ts
+  store/
+    app-store.ts
+  components/
+    Button.tsx
+    Panel.tsx
+    StatusPill.tsx
+dist/
 ```
 
 `railcode.json` names the app and asset dev port:
@@ -40,7 +39,7 @@ tools/<tool>/
 }
 ```
 
-`vite.config.ts` builds to `../../tools/<tool>`. Do not change the output path unless the deploy layout also changes.
+`vite.config.ts` builds to `dist/`. Do not change the output path unless the deploy layout also changes.
 
 ## Loading The SDK
 
@@ -176,7 +175,6 @@ Render provider errors and token-cap failures as normal app states. Do not retry
 For app-only work:
 
 ```bash
-cd apps/<tool>
 npm run build
 ```
 
@@ -193,8 +191,8 @@ railcode dev --verbose
 ## Common Pitfalls
 
 - Opening the Vite URL directly bypasses `/_api/sdk.js`; use the `railcode dev` URL.
-- Editing `tools/<tool>` directly is lost on the next build.
-- First deploy chooses access; non-interactive deploys default to private.
+- Editing `dist/` directly is lost on the next build.
+- First deploy creates public access for signed-in users.
 - Using un-namespaced KV keys accidentally shares private data across users.
 - Treating `toolUsers().users` as a complete roster when `complete` is false.
 - String-concatenating SQL user input creates injection risk even though transactions are read-only.

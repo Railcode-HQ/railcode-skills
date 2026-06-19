@@ -42,7 +42,6 @@ For env details, read the repo's `docs/service-config.md`.
 For a single app:
 
 ```bash
-cd apps/my-tool
 railcode deploy
 ```
 
@@ -60,13 +59,11 @@ Deploy sends to the configured Railcode URL and uploads to the canonical
 When no API token is saved, `railcode deploy` prompts for login and creates one.
 For non-interactive deploys, set `RAILCODE_API_TOKEN`.
 
-When the app has no access policy yet, interactive deploy asks whether the tool
-should be private, public to signed-in users, or restricted to specific emails.
-Non-interactive deploys default to private. The CLI prints the live tool URL
-after upload.
+When the app has no access policy yet, deploy creates public access for
+signed-in users. The CLI prints the live tool URL after upload.
 
-For `apps/<tool>` projects, deploy publishes `tools/<tool>/`. For standalone
-app repos, deploy falls back to `dist/`.
+For root app repos, deploy publishes `dist/`. Legacy `apps/<tool>` workspaces
+can still publish `tools/<tool>/`.
 
 ## Platform Repo Deploy Script
 

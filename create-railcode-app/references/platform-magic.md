@@ -57,9 +57,8 @@ The SDK also mounts a live inspector drawer that shows SDK activity. Do not hide
 
 ## Access Policies
 
-A tool without an access policy is closed. First deploy prompts for private,
-public to signed-in users, or restricted access. Configure access later in the
-admin UI.
+A tool without an access policy is closed until first deploy creates public
+access for signed-in users. Configure access later in the admin UI.
 
 Modes:
 
