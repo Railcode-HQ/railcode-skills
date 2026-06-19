@@ -194,7 +194,7 @@ railcode dev --verbose
 
 - Opening the Vite URL directly bypasses `/_api/sdk.js`; use the `railcode dev` URL.
 - Editing `tools/<tool>` directly is lost on the next build.
-- Forgetting access policy leaves the deployed tool closed.
+- First deploy chooses access; non-interactive deploys default to private.
 - Using un-namespaced KV keys accidentally shares private data across users.
 - Treating `toolUsers().users` as a complete roster when `complete` is false.
 - String-concatenating SQL user input creates injection risk even though transactions are read-only.

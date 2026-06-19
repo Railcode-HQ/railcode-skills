@@ -96,7 +96,8 @@ Deploy behavior:
 - Publishes `tools/<tool>/` for workspace apps, falling back to `dist/` for standalone app repos.
 - Uploads the static files over HTTP to `api.<domain>/v1/apps/<tool>/deploy`.
 - Uses a saved API token, prompts for login when needed, or reads `RAILCODE_API_TOKEN` for non-interactive runs.
-- Creates a private owner access policy for the deploying user when the app has no policy yet.
+- On first deploy from an interactive terminal, asks whether the tool should be private, public to signed-in users, or restricted to specific emails.
+- Defaults first deploys to private in non-interactive runs.
 - Prints the live tool URL after a successful upload.
 
 The deploy API accepts admins for any app, existing app owners for apps where
