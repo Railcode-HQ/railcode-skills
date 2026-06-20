@@ -42,6 +42,12 @@ Build the app as a static browser app. Do not add app-specific backend services,
 
 Use the starter's wrappers in `src/lib/railcode.ts` after `loadRailcodeSdk()` has loaded `/_api/sdk.js`. The global SDK surface is `me()`, `appUsers()`, `db.collection()`, `files`, `connections()`, `sql()`, and `llm`.
 
+## Visual Direction
+
+Treat the starter/template app as functional scaffolding, not a style guide. Do not copy its visual style into new apps unless the active design system calls for it.
+
+When a Railcode design system is available, pull or read it first and make the app follow that direction. If no app/platform design system is available, default to the Railcode design system: quiet internal-tool UI, neutral surfaces, compact controls, clear tables/lists, modest borders/radius, and restrained accent color.
+
 Model data intentionally:
 
 - KV is scoped per app and shared by that app's allowed users. Prefix keys with the logged-in user if the app needs per-user records.
