@@ -48,6 +48,8 @@ Treat the starter/template app as functional scaffolding, not a style guide. Do 
 
 When a Railcode design system is available, pull or read it first and make the app follow that direction. If no app/platform design system is available, default to the Railcode design system: quiet internal-tool UI, neutral surfaces, compact controls, clear tables/lists, modest borders/radius, and restrained accent color.
 
+Apps must be responsive. Verify the main workflows work cleanly on desktop and mobile widths, with no overlapping text, clipped controls, or unusable tables.
+
 Model data intentionally:
 
 - KV is scoped per app and shared by that app's allowed users. Prefix keys with the logged-in user if the app needs per-user records.
