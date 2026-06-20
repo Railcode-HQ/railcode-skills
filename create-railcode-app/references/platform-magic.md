@@ -85,7 +85,23 @@ const identity = await me();
 await db.collection("drafts").put(`${identity.user}:${draftId}`, draft);
 ```
 
-There is no server-side query language for KV. `list()` returns rows for the collection; filter, sort, and page in the app.
+Use the query builder when a collection can grow beyond a small in-memory list:
+
+```js
+const page = await db.collection("messages")
+  .where("roomId", "==", roomId)
+  .orderBy("updatedAt", "desc")
+  .page(1, { size: 50 });
+
+const mine = await db.collection("drafts").prefix(`${identity.user}:`).page();
+const changed = await db.collection("messages").updatedSince(lastSeenIso).count();
+```
+
+`where()` filters on JSON paths inside the stored value and supports `==`, `!=`,
+`>`, `>=`, `<`, `<=`, and `in`. `prefix()`, `updatedSince()`, and
+`updatedBefore()` filter indexed row metadata. `list()` still returns all rows
+for compatibility; prefer `page()`, `first()`, or `count()` for large
+collections.
 
 ## Files
 

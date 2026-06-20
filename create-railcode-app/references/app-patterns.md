@@ -108,7 +108,26 @@ const rows = await tasks.list();
 await tasks.delete(task.id);
 ```
 
-`list()` returns rows shaped like `{ key, value, updated_at }`. Sort by fields inside `value` when the app needs deterministic ordering.
+`list()` returns every row shaped like `{ key, value, updated_at }`. Keep it for
+small collections and compatibility flows. For large lists, server-side filters,
+deterministic ordering, and pagination, use the query builder:
+
+```ts
+const openTasks = await tasks
+  .where("done", "==", false)
+  .orderBy("updatedAt", "desc")
+  .page(1, { size: 50 });
+
+const myTasks = await tasks.prefix(`${identity.user}:`).page();
+const changed = await tasks.updatedSince(lastSyncIso).page(1, { size: 100 });
+const firstHighPriority = await tasks.where("priority", ">=", 3).first();
+const openCount = await tasks.where("done", "==", false).count();
+```
+
+`where()` accepts `==`, `!=`, `>`, `>=`, `<`, `<=`, and `in`. Field names are
+`key`, `updatedAt`, or dotted JSON paths inside the stored value, such as
+`assignee.email`. Pages are 1-based; the default size is 100 and the server caps
+size at 500.
 
 ## File Pattern
 

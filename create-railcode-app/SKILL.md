@@ -45,6 +45,7 @@ Use the starter's wrappers in `src/lib/railcode.ts` after `loadRailcodeSdk()` ha
 Model data intentionally:
 
 - KV is scoped per app and shared by that app's allowed users. Prefix keys with the logged-in user if the app needs per-user records.
+- Use KV query builders (`where`, `prefix`, `updatedSince`, `orderBy`, `page`, `first`, `count`) for large or ordered lists instead of loading the whole collection.
 - Files are scoped per app. File API names cannot contain `/`; encode hierarchy in metadata or key names instead.
 - SQL connections are admin-configured server-side and read-only. Always use placeholders plus params.
 - LLM provider/model/API key are admin-configured server-side. Send `metadata` for audit and attribution.
