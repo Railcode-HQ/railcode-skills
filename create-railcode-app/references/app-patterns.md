@@ -168,7 +168,9 @@ const result = await llm.generate(
 );
 ```
 
-Structured output:
+Structured output. Schemas run in OpenAI strict mode: every object needs
+`additionalProperties: false` and must list all its keys in `required` (make
+optional fields nullable rather than omitting them):
 
 ```ts
 const result = await llm.generate(prompt, {
@@ -176,9 +178,10 @@ const result = await llm.generate(prompt, {
     type: "json",
     schema: {
       type: "object",
+      additionalProperties: false,
       properties: {
         priority: { type: "string", enum: ["low", "medium", "high"] },
-        reason: { type: "string" }
+        reason: { type: ["string", "null"] }
       },
       required: ["priority", "reason"]
     }

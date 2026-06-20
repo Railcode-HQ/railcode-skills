@@ -53,7 +53,11 @@ await sql("select * from orders where id = $1", [id]);
 await llm.generate("Summarize this record.", { metadata: { feature: "summary" } });
 ```
 
-The SDK also mounts a live inspector drawer that shows SDK activity. Do not hide SDK errors; surface useful error states in the app.
+The SDK also ships a live inspector drawer that logs SDK activity (every `db`,
+`sql`, `llm`, `files`, `me()`, `appUsers()` call). It is hidden by default and
+has no on-screen affordance, so end users never see it; toggle it open with
+`Cmd+L` (mac) / `Ctrl+L` while developing. Do not hide SDK errors; surface
+useful error states in the app.
 
 ## Access Policies
 
@@ -146,9 +150,10 @@ const result = await llm.generate("Classify this customer.", {
     type: "json",
     schema: {
       type: "object",
+      additionalProperties: false,
       properties: {
         status: { type: "string", enum: ["healthy", "risk", "unknown"] },
-        reason: { type: "string" }
+        reason: { type: ["string", "null"] }
       },
       required: ["status", "reason"]
     }
@@ -161,6 +166,12 @@ const result = await llm.generate("Classify this customer.", {
 });
 ```
 
+JSON schemas run in OpenAI strict mode: every object must set
+`additionalProperties: false` and list **all** of its keys in `required`. Make
+optional fields nullable (`{ type: ["string", "null"] }`) instead of omitting
+them from `required`. Non-compliant schemas are rejected up front with
+`invalid_schema` (the message names the offending path). See `docs/llm-api-v0.md`.
+
 Use `llm.stream()` for incremental text output. Include metadata for audit trails. Expect global daily token caps, provider timeouts, input limits, and structured-output validation to be enforced server-side.
 
 ## Local Dev Bridge
@@ -169,7 +180,13 @@ Use `llm.stream()` for incremental text output. Include metadata for audit trail
 
 - Identity is `local-dev`.
 - App users report `mode: "local"`.
-- KV/files are local files under `~/.railcode/dev/<app>`.
+- KV/files are local files under `~/.railcode/dev/<app>`, and the KV query
+  builder (`where`/`prefix`/`orderBy`/`page`/`first`/`count`) runs against them
+  with the same semantics as production.
 - SQL, connections, and LLM forward to the configured Railcode backend only when the CLI has a saved API token.
+
+On startup `railcode dev` prints whether backend-backed APIs (LLM, SQL) are
+forwarding to the real API or will `401` for lack of a token, so you don't have
+to fire a request to find out.
 
 This lets agents build most app behavior without a live server and add production-backed SQL/LLM only when credentials and access are available.
