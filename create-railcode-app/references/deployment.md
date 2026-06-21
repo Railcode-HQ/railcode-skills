@@ -71,19 +71,20 @@ Railcode platform servers are Docker Compose installs. Update a server from the
 source repository with the Ansible playbook:
 
 ```bash
-ansible-playbook -i deploy/ansible/inventory.ini deploy/ansible/update-railcode.yml \
-  -e railcode_health_url=https://auth.<BASE_DOMAIN>/healthz
+ansible-playbook -i deploy/ansible/inventory.ini deploy/ansible/update-railcode.yml
 ```
 
-The playbook backs up local config/data, updates the checkout from GitHub,
-validates Compose, runs `docker compose up -d --build --remove-orphans`, and
-waits for the health check.
+Each host sets its own `railcode_health_url` in the inventory (see
+`deploy/ansible/inventory.example.ini`). The playbook backs up local
+config/data, updates the checkout from GitHub, validates Compose, runs
+`docker compose up -d --build --remove-orphans`, and waits for the health
+check — one host at a time across the `[railcode]` group.
 
 The repository also ships `.github/workflows/deploy-railcode.yml`, which runs
 the project checks and deploys the pushed `main` commit with the same playbook.
-Configure the workflow with `RAILCODE_HOST`, `RAILCODE_SSH_USER`,
-`RAILCODE_SSH_PRIVATE_KEY`, `RAILCODE_SSH_KNOWN_HOSTS`, and
-`RAILCODE_HEALTH_URL`.
+Configure the workflow with `RAILCODE_HOSTS` (a JSON array of
+`{name, host, health_url}` objects), `RAILCODE_SSH_USER`,
+`RAILCODE_SSH_PRIVATE_KEY`, and `RAILCODE_SSH_KNOWN_HOSTS`.
 
 Do not use a platform update for an app-only change unless the app change
 depends on SDK/backend behavior that has also changed.
