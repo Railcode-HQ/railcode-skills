@@ -32,6 +32,55 @@ npx skills add yakkomajuri/railcode --skill create-railcode-app   # install
 npx skills update create-railcode-app                             # update
 ```
 
+## Build Process (follow in order)
+
+When building or substantially changing an app, work through these steps in order. Don't
+start writing app code until steps 1–2 are done.
+
+### 1. Ask before building
+
+First, ask the user a few short questions to scope the app. Ask only what changes the
+design or architecture, then pick sensible defaults for the rest and state them. Cover at
+least:
+
+- **What & who** — what should the app do, and who uses it? (drives access policy and
+  whether data is per-user or shared)
+- **Data** — what does it store or read? Per-user records or shared across the app's users?
+  Any external database to query via `sql()`? Any `llm` use?
+- **Design** — *"Should I use the default Railcode design system, or do you have a specific
+  design direction?"* (drives step 2)
+- **Browser testing** — *"Should I test my changes in a browser before calling it done?"*
+  (drives step 4)
+
+### 2. Fetch the design system (if the user wants it)
+
+If the user chose the Railcode design system, pull it before writing any UI:
+
+```bash
+railcode login                                       # once, if not already logged in
+railcode design-system pull .railcode/design-system.md
+```
+
+Read that file and make the app follow it. The pull needs a logged-in CLI and a reachable
+Railcode server. If the user wants a custom direction instead, or the pull returns empty
+(no admin has configured one), or there is no server to log in to, skip it and use the
+fallback in the **Visual Direction** section.
+
+### 3. Build the app
+
+Scaffold and develop locally — see the **Core Workflow** and **Local Development**
+sections — following the **Implementation Rules**.
+
+### 4. Test before calling it done
+
+Run the checks in the **Validation** section: always the app build, plus a browser pass if
+the user asked for browser testing in step 1. Fix what you find before declaring the work
+done.
+
+### 5. Deploy (when the user wants it live)
+
+Publish with `railcode deploy` — see the **Deployment** section.
+
 ## Core Workflow
 
 Start from the Railcode workspace root when possible. A normal app-builder loop is:
@@ -73,7 +122,7 @@ Use the starter's wrappers in `src/lib/railcode.ts` after `loadRailcodeSdk()` ha
 
 Treat the starter/template app as functional scaffolding, not a style guide. Do not copy its visual style into new apps unless the active design system calls for it.
 
-When a Railcode design system is available, pull or read it first and make the app follow that direction. If no app/platform design system is available, default to the Railcode design system: quiet internal-tool UI, neutral surfaces, compact controls, clear tables/lists, modest borders/radius, and restrained accent color.
+If the user opted into the Railcode design system, pull it first with `railcode design-system pull` (see Build Process step 2) and make the app follow it. When no design system is configured or reachable — or the user wants a different look — default to the Railcode design system: quiet internal-tool UI, neutral surfaces, compact controls, clear tables/lists, modest borders/radius, and restrained accent color.
 
 Apps must be responsive. Verify the main workflows work cleanly on desktop and mobile widths, with no overlapping text, clipped controls, or unusable tables.
 
@@ -102,6 +151,21 @@ npm run build
 
 When changing the CLI, SDK, backend, deployment workflow, or platform behavior, run the relevant project checks in addition to the app build. Typical checks are `npm run build` in changed Node packages and, for backend changes, `cd backend && uv run pytest && uv run ruff check`.
 
-## Deployment Rule Of Thumb
+If the user asked for browser testing (Build Process step 1), also exercise the running app before handing off. Start `railcode dev`, then open `http://127.0.0.1:7331` with whatever browser tooling you have — a browser-automation MCP, browser-use, or your harness's built-in browser. Load the app, walk the primary workflow end to end, and confirm it works at both desktop and mobile widths. Treat console errors, failed `/_api/*` calls, and broken layouts as failures to fix, not ship.
 
-Use `railcode deploy` from the app directory for day-to-day static app publishes. Platform updates use the Docker Compose Ansible playbook in `deploy/ansible/`, either directly or through the GitHub Action on pushes to `main`.
+## Deployment
+
+Deploy a finished app from its app directory:
+
+```bash
+railcode deploy
+```
+
+`railcode deploy` builds the app and uploads the static output (`dist/` for a root app) over HTTP to the configured Railcode API. It needs two things:
+
+- **Which server** — set `deploy.apiUrl` in `railcode.json`, or `RAILCODE_API_URL`, or rely on the saved CLI config from `railcode login`.
+- **Auth** — it uses the saved API token, prompts for a browser login when needed, or reads `RAILCODE_API_TOKEN` for non-interactive runs.
+
+On first deploy the app is created with public access for signed-in users, and the command prints the live URL. Tighten access later in the admin UI if the app is sensitive. For DNS, platform deploys, access-policy deploys, and verification, read the [Deployment reference](references/deployment.md).
+
+Deploying an app (`railcode deploy`) is separate from updating the Railcode platform itself (a Docker Compose / Ansible flow in `deploy/ansible/`, also wired to a GitHub Action on pushes to `main`) — that only matters when the user runs the server, not when building apps on it.
