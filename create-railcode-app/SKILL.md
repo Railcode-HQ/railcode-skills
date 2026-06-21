@@ -1,9 +1,36 @@
 ---
 name: create-railcode-app
 description: Build, modify, debug, and deploy Railcode static apps end-to-end. Use when creating a Railcode app from an idea, using the Railcode CLI, wiring the zero-config SDK globals, explaining Railcode auth/data "magic", testing with railcode dev, configuring access policies, or deploying apps to a Railcode server.
+version: 0.1.0
 ---
 
 # Create Railcode App
+
+## Version Check (run first)
+
+This skill targets **Railcode CLI 0.1.0**.
+
+Run `railcode --version`. If the printed version does not match the target above, the
+skill and CLI are out of sync. Update both, then continue with the refreshed skill:
+
+```bash
+railcode upgrade
+npx skills update create-railcode-app
+```
+
+Both commands pull the latest, so they converge — after running them the printed version
+matches the target. If a `railcode` command or flag documented here is missing or errors
+unexpectedly, suspect version drift first and re-check this.
+
+## Installing & Updating This Skill
+
+This skill ships through the open agent-skills ecosystem (the `skills` CLI), so the same
+commands work across Claude Code, Codex, Cursor, and other agents:
+
+```bash
+npx skills add yakkomajuri/railcode --skill create-railcode-app   # install
+npx skills update create-railcode-app                             # update
+```
 
 ## Core Workflow
 
