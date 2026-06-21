@@ -142,14 +142,13 @@ Keep file names flat. For names that originate from users, normalize or generate
 ## SQL Pattern
 
 ```ts
-const rows = await runSql(
+const rows = await postgres("analytics").runSQL(
   "select id, name, status from customers where status = $1 order by name limit 100",
   [status],
-  "analytics",
 );
 ```
 
-Use user-selected filters only as params. Show a useful empty state when `connections()` is empty or a connection is not configured.
+Use `mysql("name").runSQL(...)` for a MySQL connection; the namespace must match the connection's engine. Use user-selected filters only as params. Show a useful empty state when `databaseConnectors()` is empty or a connection is not configured.
 
 ## LLM Pattern
 

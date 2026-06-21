@@ -48,8 +48,8 @@ await appUsers();
 await db.collection("items").put("key", { ok: true });
 await db.collection("items").get("key");
 await files.upload("name.png", blob, "image/png");
-await connections();
-await sql("select * from orders where id = $1", [id]);
+await databaseConnectors();
+await postgres("analytics").runSQL("select * from orders where id = $1", [id]);
 await llm.generate("Summarize this record.", { metadata: { feature: "summary" } });
 ```
 
@@ -122,23 +122,25 @@ File API names cannot contain `/`. If an app needs folders, store a flat file na
 
 ## SQL
 
-An admin registers global Postgres connections in the admin UI. Browser apps call `sql()` without seeing DSNs or passwords:
+An admin registers global Postgres or MySQL connections in the admin UI. Browser apps call a per-engine namespace — `postgres(name)` / `mysql(name)` — without seeing DSNs or passwords:
 
 ```js
-const rows = await sql(
+const rows = await postgres("analytics").runSQL(
   "select id, total from orders where customer_id = $1",
   [customerId],
-  { connection: "analytics" },
 );
 ```
 
 Rules:
 
+- Pick the namespace that matches the connection's engine: `postgres('x').runSQL(...)` or `mysql('x').runSQL(...)`. The wrong engine for a name fails loudly (404).
+- `postgres.runSQL(...)` (no name) targets the connection named `default`.
 - Treat SQL as read-only.
 - Always use `$1`, `$2`, ... placeholders and a params array.
 - Never concatenate user input into SQL.
-- Call `connections()` to discover configured connection names.
-- Expect `connections()` to be empty in unauthenticated local dev.
+- Call `databaseConnectors()` to discover configured connections as `{ engine, name }`.
+- Expect `databaseConnectors()` to be empty in unauthenticated local dev.
+- `sql(query, params, { connection })` and `connections()` still work as deprecated aliases.
 
 ## LLM
 

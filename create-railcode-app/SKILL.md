@@ -46,7 +46,7 @@ least:
 - **What & who** — what should the app do, and who uses it? (drives access policy and
   whether data is per-user or shared)
 - **Data** — what does it store or read? Per-user records or shared across the app's users?
-  Any external database to query via `sql()`? Any `llm` use?
+  Any external database to query via `postgres('name').runSQL()` / `mysql('name').runSQL()`? Any `llm` use?
 - **Design** — *"Should I use the default Railcode design system, or do you have a specific
   design direction?"* (drives step 2)
 - **Browser testing** — *"Should I test my changes in a browser before calling it done?"*
@@ -116,7 +116,7 @@ Load only the reference needed for the task:
 
 Build the app as a static browser app. Do not add app-specific backend services, API keys, auth code, or hardcoded Railcode URLs unless the user explicitly asks for platform work. Browser code should call same-origin `/_api/*` through the Railcode SDK.
 
-Use the starter's wrappers in `src/lib/railcode.ts` after `loadRailcodeSdk()` has loaded `/_api/sdk.js`. The global SDK surface is `me()`, `appUsers()`, `db.collection()`, `files`, `connections()`, `sql()`, and `llm`.
+Use the starter's wrappers in `src/lib/railcode.ts` after `loadRailcodeSdk()` has loaded `/_api/sdk.js`. The global SDK surface is `me()`, `appUsers()`, `db.collection()`, `files`, `databaseConnectors()`, the per-engine `postgres('name').runSQL()` / `mysql('name').runSQL()` namespaces, and `llm`. (`sql()` and `connections()` remain as deprecated aliases.)
 
 ## Visual Direction
 
