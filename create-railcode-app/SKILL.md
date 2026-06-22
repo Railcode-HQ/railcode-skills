@@ -140,7 +140,7 @@ Model data intentionally:
 
 ## Local Development
 
-Run `railcode dev` from `apps/<app>` or any directory with a `railcode.json`. It serves the app at `http://127.0.0.1:7331`, runs the asset dev server when applicable, serves the SDK at `/_api/sdk.js`, and stores local KV/files under `~/.railcode/dev/<app>`.
+Run `railcode dev` from `apps/<app>` or any directory with a `railcode.json`. It serves the app at the first available local port starting at `http://127.0.0.1:7331`, runs the asset dev server when applicable, serves the SDK at `/_api/sdk.js`, and stores local KV/files under `~/.railcode/dev/<app>`. Use the printed URL; it may be `7332` or higher when another dev server is already running.
 
 Local dev mocks identity, app users, KV, and files. It forwards backend-backed APIs such as SQL, connections, and LLM to the configured Railcode API when the CLI has a saved API token.
 
@@ -155,7 +155,7 @@ npm run build
 
 When changing the CLI, SDK, backend, deployment workflow, or platform behavior, run the relevant project checks in addition to the app build. Typical checks are `npm run build` in changed Node packages and, for backend changes, `cd backend && uv run pytest && uv run ruff check`.
 
-If the user asked for browser testing (Build Process step 1), also exercise the running app before handing off. Start `railcode dev`, then open `http://127.0.0.1:7331` with whatever browser tooling you have — a browser-automation MCP, browser-use, or your harness's built-in browser. Load the app, walk the primary workflow end to end, and confirm it works at both desktop and mobile widths. Treat console errors, failed `/_api/*` calls, and broken layouts as failures to fix, not ship.
+If the user asked for browser testing (Build Process step 1), also exercise the running app before handing off. Start `railcode dev`, then open the printed local URL, usually `http://127.0.0.1:7331`, with whatever browser tooling you have — a browser-automation MCP, browser-use, or your harness's built-in browser. Load the app, walk the primary workflow end to end, and confirm it works at both desktop and mobile widths. Treat console errors, failed `/_api/*` calls, and broken layouts as failures to fix, not ship.
 
 ## Deployment
 

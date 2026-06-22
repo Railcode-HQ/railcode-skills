@@ -34,7 +34,7 @@ Behavior:
 
 The starter uses React, Vite, Zustand, Tailwind, lucide-react, TypeScript, and exact package pins. Keep direct dependency versions exact unless there is a reason to upgrade.
 
-The starter's `vite.config.ts` builds to `dist/` and serves the asset dev server on `127.0.0.1:5173`.
+The starter's `vite.config.ts` builds to `dist/` and uses `127.0.0.1:5173` as the starting asset dev server port.
 
 ## Local Dev
 
@@ -54,6 +54,8 @@ railcode dev --asset-port 5174
 railcode dev --command "npm run dev -- --host 127.0.0.1 --port 5173"
 ```
 
+`--port` is the starting Railcode proxy port. `railcode dev` tries that port first, then moves upward until it finds an available local port, and prints the URL to open. `--asset-port` and `railcode.json` `dev.port` are starting asset-server ports for inferred Vite apps; the CLI reserves the selected port and passes it to Vite. Custom `--command` / `dev.command` values are not rewritten, so keep their target port aligned with `--asset-port`.
+
 App detection order:
 
 - `--app` option or positional app argument.
@@ -70,6 +72,7 @@ Root and asset server detection:
 - If the root has `package.json` with a `dev` script, run it.
 - Prefer `pnpm`, then `yarn`, otherwise `npm`.
 - Run `npm ci` when a package-lock exists and dependencies are missing; otherwise run the package manager's normal install.
+- Multiple `railcode dev` processes can run at once; each uses its own printed proxy URL and inferred Vite asset port. Concurrent sessions for the same app share the same local KV/files directory.
 
 Local API behavior:
 

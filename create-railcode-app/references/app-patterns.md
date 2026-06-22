@@ -27,7 +27,7 @@ src/
 dist/
 ```
 
-`railcode.json` names the app and asset dev port:
+`railcode.json` names the app and starting asset dev port:
 
 ```json
 {
@@ -52,7 +52,7 @@ await loadRailcodeSdk();
 Then it calls typed wrappers:
 
 ```ts
-import { collection, fileStore, getIdentity, llm, runSql } from "@/lib/railcode";
+import { collection, dataConnectors, fileStore, getIdentity, llm, postgres } from "@/lib/railcode";
 ```
 
 Prefer the wrappers over direct `window.*` use. If creating a non-starter app, include either the dynamic loader or an HTML script tag before the app bundle:
