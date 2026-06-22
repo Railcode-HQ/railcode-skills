@@ -67,7 +67,7 @@ Fail clearly when SDK globals are unavailable. This usually means the app is bei
 
 Railcode apps are internal apps. Build the actual working interface as the first screen, not a marketing page. Favor dense, readable, task-focused layouts with clear states for loading, empty data, errors, and successful writes.
 
-Do not add custom auth screens. Users should arrive authenticated through the platform. Use `me()` only to show identity or namespace data.
+Do not add custom auth screens. Users should arrive authenticated through the platform. Use `me()` only to show identity or namespace data. `me().display_name` is optional and safe for labels; keep using `me().user` for stable keys and ownership checks.
 
 Do not leak platform internals such as bearer tokens, DSNs, LLM provider config, or admin-only settings into browser state.
 
@@ -88,7 +88,7 @@ const taskKey = (id: string) => id;
 const userTaskKey = (user: string, id: string) => `${user}:${id}`;
 ```
 
-If data is per-user, prefix by `identity.user`. If data is shared, make conflict behavior obvious in the UI.
+If data is per-user, prefix by `identity.user`, not `identity.display_name`. If data is shared, make conflict behavior obvious in the UI.
 
 ## KV Pattern
 

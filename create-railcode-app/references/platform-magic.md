@@ -53,6 +53,11 @@ await postgres("analytics").runSQL("select * from orders where id = $1", [id]);
 await llm.generate("Summarize this record.", { metadata: { feature: "summary" } });
 ```
 
+`me()` returns the stable user key as `user` plus optional `display_name`.
+Use `display_name` for visible labels when present; use `user` for keys,
+permissions, and persisted ownership. `appUsers().users` includes the same
+optional `display_name` field for known users.
+
 The SDK also ships a live inspector drawer that logs SDK activity (every `db`,
 `sql`, `llm`, `files`, `me()`, `appUsers()` call). It is hidden by default and
 has no on-screen affordance, so end users never see it; toggle it open with
@@ -70,7 +75,7 @@ Modes:
 - `workspace`: available to authenticated workspace users.
 - `restricted`: available only to named users or domains.
 
-`appUsers()` returns the current mode, known users, and whether the roster is complete. Restricted or domain-based access may not produce a complete roster; treat `complete: false` as "known users only".
+`appUsers()` returns the current mode, known users, optional display names, and whether the roster is complete. Restricted or domain-based access may not produce a complete roster; treat `complete: false` as "known users only".
 
 ## KV Store
 
