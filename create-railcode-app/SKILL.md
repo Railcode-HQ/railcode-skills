@@ -1,28 +1,33 @@
 ---
 name: create-railcode-app
 description: Build, modify, debug, and deploy Railcode static apps end-to-end. Use when creating a Railcode app from an idea, using the Railcode CLI, wiring the zero-config SDK globals, explaining Railcode auth/data "magic", testing with railcode dev, understanding app access, or deploying apps to a Railcode server.
-version: 0.1.9
+version: 0.1.10
 ---
 
 # Create Railcode App
 
 ## Version Check (run first)
 
-This skill targets **Railcode CLI 0.1.11** (the multi-tenant Railcode platform).
-
-Run `railcode --version`. If the printed version does not match the target above, the
-skill and CLI may be out of sync. Update both, then continue with the refreshed skill:
+Find the latest published CLI and compare it to what you have:
 
 ```bash
-npm install -g railcode@latest        # or: pnpm add -g railcode@latest
+npm view railcode version      # latest published (source of truth)
+railcode --version             # what's installed
+```
+
+If they differ, upgrade the CLI: `npm install -g railcode@latest` (or
+`pnpm add -g railcode@latest`). It's a regular npm package, not a self-updating binary.
+
+This skill was last written against **CLI 0.1.11** (the multi-tenant Railcode platform).
+That number is provenance, not a target to match — npm is the source of truth for "latest."
+If the latest published CLI is newer, the skill itself may lag, so update it too:
+
+```bash
 npx skills update create-railcode-app
 ```
 
-Both commands pull the latest, so they converge — after running them the printed version
-should match the target. The CLI is a regular npm package, so upgrade it through your
-package manager. If a `railcode` command or flag documented here is missing or errors
-unexpectedly, suspect version drift first and
-re-check this.
+If a `railcode` command or flag documented here is missing or errors unexpectedly, suspect
+version drift first and re-check this.
 
 ## Installing & Updating This Skill
 
