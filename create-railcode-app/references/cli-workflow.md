@@ -12,7 +12,7 @@ railcode dev [--port <n>] [--asset-port <n>] [--reset]   Run the app locally aga
 railcode deploy                               Build (if configured) and deploy the app here
 railcode design-system                        Print your org's design-system guidance (markdown)
 railcode db <list|query> ...                  List data connectors / run read-only SQL
-railcode connector <list|fetch> ...           List service connectors / proxy one HTTP call
+railcode connector <list|docs|fetch> ...      List service connectors / read API docs / proxy one HTTP call
 railcode --version
 railcode --help
 ```
@@ -170,17 +170,27 @@ SQL is read-only — always use placeholders + `--params`, never string interpol
 
 ```bash
 railcode connector list                                          # list service connectors
+railcode connector docs stripe                                   # how to call one connector's API
+railcode connector docs stripe --openapi                         # just its OpenAPI spec (inline text, else URL)
 railcode connector fetch "/v1/charges?limit=3" --connector stripe
 railcode connector fetch "/v1/charges" --connector stripe --method POST --body "amount=500&currency=usd"
 ```
 
-`railcode connector` lists and calls the org's **service connectors** (admin-configured HTTP
-proxies to SaaS APIs) — the same surface the in-app `serviceConnectors()` /
-`connector().fetch()` use. The connector holds the credential; you control only
-method/path/body. Resolve-only and app-scoped, like `railcode db` (deploy the app first).
+`railcode connector` lists, documents, and calls the org's **service connectors**
+(admin-configured HTTP proxies to SaaS APIs) — the same surface the in-app
+`serviceConnectors()` / `connector().fetch()` use. The connector holds the credential; you
+control only method/path/body. Resolve-only and app-scoped, like `railcode db` (deploy the
+app first).
 
 - `railcode connector list` (aliases `ls`, `connectors`) — prints `name`, `auth_type`, and
-  `allowed_methods` (and `description` when set); `--json` for the raw array.
+  `allowed_methods` (plus a `description` column, and a `docs` column reading `api` /
+  `openapi` for the connectors that expose documentation); `--json` for the raw array.
+- `railcode connector docs <name>` (alias `doc`) — prints one connector's documentation
+  bundle so you know how to call it: usage instructions, the API-docs link (or inline text),
+  and the OpenAPI spec (link or inline) when the admin configured them. `--openapi` prints
+  only the spec (inline text if present, else its URL; exits non-zero when there is none);
+  `--json` for the raw docs object. Use the `docs` column from `connector list` to see which
+  connectors have anything to show.
 - `railcode connector fetch <path>` (alias `request`) — proxies one HTTP call.
   `--connector <name>` (required), `--method <verb>` (default `GET`; must be allowed by the
   connector or the server returns 405), `--body <string>` / `--file <path>` (mutually

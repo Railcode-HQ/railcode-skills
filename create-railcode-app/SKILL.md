@@ -1,14 +1,14 @@
 ---
 name: create-railcode-app
 description: Build, modify, debug, and deploy Railcode static apps end-to-end. Use when creating a Railcode app from an idea, using the Railcode CLI, wiring the zero-config SDK globals, explaining Railcode auth/data "magic", testing with railcode dev, understanding app access, or deploying apps to a Railcode server.
-version: 0.1.8
+version: 0.1.9
 ---
 
 # Create Railcode App
 
 ## Version Check (run first)
 
-This skill targets **Railcode CLI 0.1.10** (the multi-tenant Railcode platform).
+This skill targets **Railcode CLI 0.1.11** (the multi-tenant Railcode platform).
 
 Run `railcode --version`. If the printed version does not match the target above, the
 skill and CLI may be out of sync. Update both, then continue with the refreshed skill:
