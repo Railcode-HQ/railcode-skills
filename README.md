@@ -34,8 +34,11 @@ skill, sign in, scaffold a "hello world" app, and deploy it.
 
 ```bash
 ./onboard.sh            # full flow (login opens your browser)
-./onboard.sh --help     # options: --app, --dir, --api-url, --skip-*, --no-deploy
+./onboard.sh --help     # options: --app, --dir, --api-url, --agent, --skip-*, --no-deploy
 ```
 
-Signing in and the skill install are interactive by design; everything else is
-automatic and idempotent (re-running skips work that's already done).
+The skill is installed non-interactively to a default agent set (Claude Code,
+OpenCode, Codex, Pi, Kiro, Cursor); change it with `--agent <list>` or fall back
+to the interactive picker with `--prompt-agent`. Signing in is always
+interactive (it opens your browser). Everything else is automatic and idempotent
+— re-running skips work that's already done.

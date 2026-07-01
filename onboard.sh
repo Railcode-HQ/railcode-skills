@@ -10,9 +10,10 @@
 #   4. Scaffold a "hello world" app           (railcode init … + a me() greeting)
 #   5. Deploy it                              (railcode deploy — prints the live URL)
 #
-# Steps 2 and 3 are interactive by design: the skill installer asks where to
-# install it (your coding agent's config), and login prints a link you approve
-# in the browser while logged into Railcode. Everything else is automatic.
+# By default the skill is installed non-interactively (globally) to a fixed set
+# of agents: Claude Code, OpenCode, Codex, Pi, Kiro, Cursor. Login (step 3) is
+# always interactive — it prints a link you approve in the browser while logged
+# into Railcode. Everything else is automatic.
 #
 # Usage:
 #   ./onboard.sh [options]
@@ -21,6 +22,12 @@
 #   --app <name>      App slug to scaffold + deploy (default: hello)
 #   --dir <path>      Directory to scaffold the app into (default: current dir)
 #   --api-url <url>   Railcode server to log in to (default: the CLI's default)
+#   --agent <list>    Comma-separated agents to install the skill to (default:
+#                     claude-code,opencode,codex,pi,kiro-cli,cursor). Values must
+#                     be valid `skills` agent ids — note kiro's id is kiro-cli.
+#   --prompt-agent    Don't pass agents; let the installer prompt (or auto-detect
+#                     when it's itself run by an agent).
+#   --skill-project   Install the skill per-project (into the cwd) not globally
 #   --skip-skill      Skip the skill install (step 2)
 #   --skip-login      Skip login even if not logged in (step 3)
 #   --force-login     Re-run login even if already logged in
@@ -35,12 +42,15 @@ set -euo pipefail
 APP="hello"
 DIR="$PWD"
 API_URL=""
+AGENTS="claude-code,opencode,codex,pi,kiro-cli,cursor"
+SKILL_GLOBAL=1
 SKIP_SKILL=0
 SKIP_LOGIN=0
 FORCE_LOGIN=0
 NO_DEPLOY=0
 
-SKILL="npx skills add yakkomajuri/railcode-skills --skill create-railcode-app"
+SKILL_REPO="yakkomajuri/railcode-skills"
+SKILL_NAME="create-railcode-app"
 CONFIG_PATH="$HOME/.railcode/config.json"
 
 # ---------------------------------------------------------------------------
@@ -73,6 +83,9 @@ while [ $# -gt 0 ]; do
     --app)         APP="${2:?--app needs a value}"; shift 2 ;;
     --dir)         DIR="${2:?--dir needs a value}"; shift 2 ;;
     --api-url)     API_URL="${2:?--api-url needs a value}"; shift 2 ;;
+    --agent)       AGENTS="${2:?--agent needs a value}"; shift 2 ;;
+    --prompt-agent) AGENTS=""; shift ;;
+    --skill-project) SKILL_GLOBAL=0; shift ;;
     --skip-skill)  SKIP_SKILL=1; shift ;;
     --skip-login)  SKIP_LOGIN=1; shift ;;
     --force-login) FORCE_LOGIN=1; shift ;;
@@ -129,8 +142,25 @@ step "2/5 · Install the Railcode skill for your coding agent"
 if [ "$SKIP_SKILL" -eq 1 ]; then
   warn "skipped (--skip-skill)"
 else
-  info "The installer will ask which agent / where to install it — that's expected."
-  run $SKILL
+  # `npx --yes` auto-confirms npx's own package-fetch prompt. The `skills` CLI
+  # stays interactive only for the agent-selection + confirmation prompts, which
+  # a `--agent` per target plus `--yes` remove. The CLI takes one --agent flag
+  # per agent (a comma-joined string is rejected), so expand the list here.
+  skill_cmd=(npx --yes skills add "$SKILL_REPO" --skill "$SKILL_NAME")
+  if [ -n "$AGENTS" ]; then
+    IFS=',' read -r -a agent_list <<< "$AGENTS" || true
+    for a in "${agent_list[@]}"; do
+      a="${a//[[:space:]]/}"
+      [ -n "$a" ] && skill_cmd+=(--agent "$a")
+    done
+    skill_cmd+=(--yes)
+    [ "$SKILL_GLOBAL" -eq 1 ] && skill_cmd+=(--global)
+    info "Installing non-interactively → ${AGENTS}$([ "$SKILL_GLOBAL" -eq 1 ] && printf ' (global)')"
+  else
+    info "The installer will ask which agent / where to install it — that's expected."
+    info "(--prompt-agent chosen; the default installs to a fixed agent set non-interactively.)"
+  fi
+  run "${skill_cmd[@]}"
   ok "skill installed"
 fi
 
