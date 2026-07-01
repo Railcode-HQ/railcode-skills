@@ -25,3 +25,17 @@ Update it later:
 ```bash
 npx skills update create-railcode-app
 ```
+
+## Onboarding script
+
+[`onboard.sh`](onboard.sh) runs the full step-by-step onboarding end to end —
+the same flow as the in-app "Step by step" tab: install the CLI, install the
+skill, sign in, scaffold a "hello world" app, and deploy it.
+
+```bash
+./onboard.sh            # full flow (login opens your browser)
+./onboard.sh --help     # options: --app, --dir, --api-url, --skip-*, --no-deploy
+```
+
+Signing in and the skill install are interactive by design; everything else is
+automatic and idempotent (re-running skips work that's already done).
