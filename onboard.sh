@@ -175,10 +175,17 @@ elif logged_in && [ "$FORCE_LOGIN" -eq 0 ]; then
   ok "already logged in (pass --force-login to sign in again)"
 else
   info "A link will be printed — open it in the browser where you're logged into Railcode."
-  if [ -n "$API_URL" ]; then
-    run railcode login --api-url "$API_URL"
+  login_cmd=(railcode login)
+  [ -n "$API_URL" ] && login_cmd+=(--api-url "$API_URL")
+  printf '    %s$ %s%s\n' "$DIM" "${login_cmd[*]}" "$RESET"
+  # `curl … | bash` leaves our stdin on the download pipe, not the terminal, and
+  # `railcode login` refuses to run without a TTY. Hand it the controlling
+  # terminal explicitly when we can actually open one (test the open, not just
+  # -r: /dev/tty can stat readable yet fail to open with no controlling tty).
+  if { : < /dev/tty; } 2>/dev/null; then
+    "${login_cmd[@]}" < /dev/tty
   else
-    run railcode login
+    "${login_cmd[@]}"
   fi
   logged_in || die "Login did not complete (no org on file). Finish onboarding in the web app, then re-run."
   ok "signed in"
