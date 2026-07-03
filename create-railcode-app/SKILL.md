@@ -133,9 +133,10 @@ directly (in TypeScript, `declare` them or add an ambient `.d.ts`). The global S
 - `me()` → `{ user, app, org }` (each `{ uuid, ... }`); `appUsers()` → the org's members.
 - `designSystem()` → the org's design-system guidance (markdown string), same content as
   `railcode design-system`.
-- `db.collection(name)` → per-app KV (`get`/`put`/`delete`/`list`, plus the
-  `where`/`prefix`/`updatedSince`/`updatedBefore`/`orderBy`/`page`/`first`/`count` query
-  builder).
+- `db.collection(name)` → per-app KV (`get`/`put`/`delete`/`list`). Start a query with
+  `query()` for pure ordering/paging, or with the collection helpers `where(...)` /
+  `prefix(...)`; query-only methods include `updatedSince`/`updatedBefore`/`orderBy`/
+  `page`/`first`/`count`.
 - `files` → `upload(name, data, contentType?)`, `url(name)`, `list()`, `delete(name)`.
 - `llm` → `llm.generate(input, opts)` and the streaming `llm.stream(input, opts)`.
 - `data('name').runSQL(query, params)` runs SQL against a connection of any kind
@@ -169,7 +170,12 @@ Apps must be responsive. Verify the main workflows work cleanly on desktop and m
 Model data intentionally:
 
 - KV is scoped per app and shared by that app's allowed users. Prefix keys with the logged-in user if the app needs per-user records.
-- Use KV query builders (`where`, `prefix`, `updatedSince`, `updatedBefore`, `orderBy`, `page`, `first`, `count`) for large or ordered lists instead of loading the whole collection. `where()` operators are the string names `eq`, `ne`, `gt`, `gte`, `lt`, `lte`, and `in` (e.g. `.where("done", "eq", false)`), not symbols.
+- Use KV query builders for large or ordered lists instead of loading the whole collection.
+  `where()` and `prefix()` can start a query from a collection; pure ordering or paging starts
+  with `.query()` (for example `.query().orderBy("updatedAt", "desc").page(1, 50)`).
+  `orderBy`, `updatedSince`, `updatedBefore`, `page`, `first`, and `count` are query methods,
+  not direct collection methods. `where()` operators are the string names `eq`, `ne`, `gt`,
+  `gte`, `lt`, `lte`, and `in` (e.g. `.where("done", "eq", false)`), not symbols.
 - Files are scoped per app. File API names cannot contain `/`; encode hierarchy in metadata or key names instead.
 - SQL connections (Postgres/BigQuery/Snowflake) are admin-configured server-side and read-only. Always use placeholders plus params.
 - LLM provider/model/API key are admin-configured server-side. Send `metadata` for audit and attribution.

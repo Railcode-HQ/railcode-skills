@@ -133,15 +133,25 @@ await db.collection("drafts").put(`${who.user.uuid}:${draftId}`, draft);  // per
 For anything that can grow past a small list, use the query builder instead of `list()`:
 
 ```js
+const newest = await db.collection("messages")
+  .query()
+  .orderBy("updatedAt", "desc")
+  .page(1, 50);
+
 const page = await db.collection("messages")
   .where("roomId", "eq", roomId)
   .orderBy("updatedAt", "desc")
   .page(1, 50);                       // page(pageNumber, size?) — size is a number
 
 const mine    = await db.collection("drafts").prefix(`${who.user.uuid}:`).page();
-const changed = await db.collection("messages").updatedSince(lastSeenIso).count();
+const changed = await db.collection("messages").query().updatedSince(lastSeenIso).count();
 const first   = await db.collection("messages").where("pinned", "eq", true).first();
 ```
+
+`where()` and `prefix()` can start a query from a collection. For pure ordering/paging
+with no filter, or for updated-time filters, start with `query()` first —
+`db.collection("messages").orderBy(...)` and `.updatedSince(...)` are not collection
+methods.
 
 Query semantics (the dev engine is a byte-for-byte port of the backend, so dev matches prod):
 

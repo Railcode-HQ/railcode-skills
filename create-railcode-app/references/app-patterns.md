@@ -109,16 +109,25 @@ builder. Operators are the **string names** `eq`, `ne`, `gt`, `gte`, `lt`, `lte`
 `page(pageNumber, size?)` takes a **numeric** size:
 
 ```ts
+const newest = await tasks
+  .query()
+  .orderBy("updatedAt", "desc")
+  .page(1, 50);
+
 const open = await tasks
   .where("done", "eq", false)
   .orderBy("updatedAt", "desc")
   .page(1, 50);
 
 const mine    = await tasks.prefix(`${who.user.uuid}:`).page();
-const changed = await tasks.updatedSince(lastSyncIso).page(1, 100);
+const changed = await tasks.query().updatedSince(lastSyncIso).page(1, 100);
 const urgent  = await tasks.where("priority", "gte", 3).first();
 const openN   = await tasks.where("done", "eq", false).count();
 ```
+
+`where()` and `prefix()` can start a query from a collection. For pure ordering/paging
+with no filter, or for updated-time filters, start with `query()` first —
+`tasks.orderBy(...)` and `tasks.updatedSince(...)` are not collection methods.
 
 Field names are the virtual `key` / `updatedAt` (a.k.a. `updated_at`), or a dotted JSON path
 inside the stored value (`assignee.email`). Comparisons are typed by the operand
