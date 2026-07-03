@@ -1,7 +1,7 @@
 ---
 name: create-railcode-app
 description: Build, modify, debug, and deploy Railcode static apps end-to-end. Use when creating a Railcode app from an idea, using the Railcode CLI, wiring the zero-config SDK globals, explaining Railcode auth/data "magic", testing with railcode dev, understanding app access, or deploying apps to a Railcode server.
-version: 0.1.10
+version: 0.1.11
 ---
 
 # Create Railcode App
@@ -18,7 +18,7 @@ railcode --version             # what's installed
 If they differ, upgrade the CLI: `npm install -g railcode@latest` (or
 `pnpm add -g railcode@latest`). It's a regular npm package, not a self-updating binary.
 
-This skill was last written against **CLI 0.1.12** (the multi-tenant Railcode platform).
+This skill was last written against **CLI 0.1.13** (the multi-tenant Railcode platform).
 That number is provenance, not a target to match — npm is the source of truth for "latest."
 If the latest published CLI is newer, the skill itself may lag, so update it too:
 

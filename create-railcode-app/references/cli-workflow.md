@@ -151,10 +151,12 @@ railcode db query --file report.sql --connection analytics
 ```
 
 `railcode db` inspects the org's **data connectors** (admin-configured Postgres, BigQuery, or
-Snowflake) and runs ad-hoc read-only SQL from the terminal — the same connectors and `/sql`
-route the in-app `dataConnectors()` / `data().runSQL()` use. Run it from an app dir for an app you've
-**already deployed**; it resolves the existing app by slug (it won't create one) and errors
-"run `railcode deploy` first" otherwise.
+Snowflake) and runs ad-hoc read-only SQL from the terminal — the same connectors and SQL the
+in-app `dataConnectors()` / `data().runSQL()` use. Data connectors are **org-scoped**, so these
+one-shot commands **work straight after `railcode login`** — **no app and no `railcode.json`
+required**. They hit the app-less org data plane (`/api/organizations/{org}/data/*`) with your
+login token; run them from any directory. (This is new in CLI 0.1.13 — earlier versions required
+a deployed app.)
 
 - `railcode db list` (aliases `ls`, `connections`) — prints each connector's `name` +
   `engine`; `--json` prints the raw array.
@@ -180,8 +182,9 @@ railcode connector fetch "/v1/charges" --connector stripe --method POST --body "
 `railcode connector` lists, documents, and calls the org's **service connectors**
 (admin-configured HTTP proxies to SaaS APIs) — the same surface the in-app
 `serviceConnectors()` / `connector().fetch()` use. The connector holds the credential; you
-control only method/path/body. Resolve-only and app-scoped, like `railcode db` (deploy the
-app first).
+control only method/path/body. Service connectors are **org-scoped**, so — like `railcode db` —
+these commands **work straight after `railcode login`** with **no app or `railcode.json`
+required**, hitting the same `/api/organizations/{org}/data/*` plane.
 
 - `railcode connector list` (aliases `ls`, `connectors`) — prints `name`, `auth_type`, and
   `allowed_methods` (plus a `description` column, and a `docs` column reading `api` /
