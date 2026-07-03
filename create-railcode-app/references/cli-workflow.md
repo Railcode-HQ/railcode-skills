@@ -11,7 +11,8 @@ railcode init <app> [--template static|react] Scaffold a new app directory
 railcode dev [--port <n>] [--asset-port <n>] [--reset]   Run the app locally against an emulated /_api
 railcode deploy                               Build (if configured) and deploy the app here
 railcode design-system                        Print your org's design-system guidance (markdown)
-railcode db <list|query> ...                  List data connectors / run read-only SQL
+railcode db <list|query> ...                  List data connectors / run ad-hoc SQL
+railcode query <list|run|create|update|delete> ...   Saved queries: invoke by name / author (admin)
 railcode connector <list|docs|fetch> ...      List service connectors / read API docs / proxy one HTTP call
 railcode --version
 railcode --help
@@ -49,8 +50,9 @@ railcode login [--api-url <url>]
 
 Login is **browser-based** (not an email/password prompt). The CLI:
 
-1. Starts a localhost HTTP callback and prints a browser authorization link.
-2. You open it; the browser does normal dashboard auth and approves the CLI.
+1. Starts a localhost HTTP callback, prints the authorization link, and **auto-opens your
+   default browser** to it (new in CLI 0.1.14; paste the printed URL if it doesn't open).
+2. The browser does normal dashboard auth and approves the CLI.
 3. The CLI exchanges the one-time code for a long-lived, revocable **personal API token**,
    resolves your organization, and saves everything to `~/.railcode/config.json`.
 
@@ -167,7 +169,54 @@ a deployed app.)
   from a file (mutually exclusive with the positional arg), `--json` prints the raw
   `{ columns, rows, rowcount, truncated }` envelope.
 
-SQL is read-only — always use placeholders + `--params`, never string interpolation.
+Treat SQL as read-only — always use placeholders + `--params`, never string interpolation.
+(On Postgres the platform enforces this: every session is opened read-only. BigQuery and
+Snowflake have no session-level read-only mode, so there the connection credential's
+privileges are the boundary.)
+
+Note the two different `--params` shapes: `railcode db query` takes a positional **array**
+(`'[100]'` binds `$1`); `railcode query run` takes a named **object** (see below).
+
+## Saved Queries
+
+*(New in CLI 0.1.14.)* A **saved query** is a named, versioned SQL template an org admin
+publishes against one data connection. Members and apps invoke it **by name** with typed,
+named params — the grant-gated alternative to ad-hoc SQL, and the same queries the in-app
+`query('name', params)` / `savedQueries()` SDK globals use. Like `railcode db`, these are
+org-scoped: they work straight after `railcode login`, no app required.
+
+```bash
+railcode query list                                # signatures: name, params, version, description
+railcode query run my_orders --params '{"region":"emea","limit":5}'
+railcode query create --name my_orders --connection analytics \
+  --sql "select * from orders where region = :region limit :limit" \
+  --params '[{"name":"region","type":"string"},{"name":"limit","type":"int","default":20}]'
+railcode query update my_orders --sql-file my_orders.sql   # edit in place; version bumps
+railcode query delete my_orders                            # removes the query AND grants naming it
+```
+
+- **Templates use `:name` placeholders** (not `$1`) matched to declared params, each typed
+  `string | int | float | bool`. A param declared with a `"default"` is optional at invoke
+  time — the server binds the default when the caller omits it.
+- **`--params` is JSON on every subcommand**: `run` takes one JSON **object** (exactly what
+  the API takes); `create`/`update` take a JSON **array** of
+  `{"name","type","default"?}` declarations.
+- **The SQL comes from `--sql` (inline) or `--sql-file`** — never both. Use the
+  `--sql="..."` form if the template starts with a `--` comment (a bare `--sql` followed by
+  a `--`-leading value is parsed as a flag).
+- **`update` edits in place** with PATCH semantics: pass any of `--sql`/`--sql-file`,
+  `--params` (replaces the declared list), `--clear-params` (declare none),
+  `--connection`, `--description`; omitted fields keep their value. Editing SQL or params
+  bumps the query's version; **grants naming the query survive** — unlike delete +
+  recreate, which removes them.
+- **Context binds**: templates may reference `:_ctx_user_id`, `:_ctx_user_email` and
+  `:_ctx_org` — the server injects those from whoever invokes, and a caller-supplied
+  `_ctx*` param is rejected with a 400. `where rep_email = :_ctx_user_email` is per-caller
+  row scoping the caller cannot forge.
+- `list`/`run` are member operations (invocation can be grant-gated per query by admins);
+  `create`/`update`/`delete` are **admin-only** (403 otherwise). `list` returns signatures
+  only, never the SQL text. Aliases: `query` = `queries`, `list` = `ls`, `run` = `invoke`;
+  `--json` on `run` prints the raw `{ columns, rows, rowcount, truncated }` envelope.
 
 ## Call Service Connectors
 

@@ -68,6 +68,9 @@ const bq   = await bigquery("warehouse").runSQL("select id from `ds.orders` wher
 const any  = await data("analytics").runSQL("select 1");   // engine-generic (dispatch by kind)
 const conns = await dataConnectors();             // [{ engine, name }]
 
+const mine = await query("my_orders", { region: "emea" });  // invoke a saved query by name
+const qs   = await savedQueries();                // [{ name, description, params, version }]
+
 const resp = await connector("stripe").fetch("/v1/charges", { method: "POST", body });
 const svc  = await serviceConnectors();           // [{ name, description, auth_type, allowed_methods }]
 
@@ -75,7 +78,8 @@ const out  = await llm.generate("Summarize this record.", { metadata: { feature:
 ```
 
 The globals are exactly: `me`, `appUsers`, `designSystem`, `db`, `files`, `data`, `postgres`,
-`bigquery`, `snowflake`, `dataConnectors`, `connector`, `serviceConnectors`, `llm`. Notes:
+`bigquery`, `snowflake`, `dataConnectors`, `query`, `savedQueries`, `connector`,
+`serviceConnectors`, `llm`. Notes:
 
 - `me()` returns nested objects. Use **`me().user.uuid`** as the stable per-user key for
   ownership/permissions/KV prefixes; `me().user.name`/`.email` are for display.
@@ -197,6 +201,37 @@ Rules:
 - Call `dataConnectors()` to discover configured connections as `{ engine, name }`. Expect it
   to be empty in unauthenticated local dev (and show a clean empty state).
 - The server caps result rows (the envelope's `truncated` flag tells you when it did).
+- On Postgres the platform opens every session **read-only**, so writes fail regardless of
+  the credential. BigQuery and Snowflake have no session-level read-only mode — there the
+  connection credential's privileges are the boundary. Treat all app SQL as read-only.
+
+## Saved Queries
+
+*(New in CLI/SDK 0.1.14.)* A **saved query** is a named, versioned SQL template an org
+admin publishes against one data connection. Apps invoke it by name — the typed,
+grant-gated alternative to writing ad-hoc SQL in the app:
+
+```js
+const qs   = await savedQueries();   // [{ name, description, params, version }] — never the SQL
+const rows = await query("my_orders", { region: "emea" });   // limit omitted → server binds its default
+```
+
+- `query(name, params?)` returns the same rows shape as `runSQL` (array of row objects plus
+  `.columns`/`.rowcount`/`.truncated`). Params are **named and typed**
+  (`string|int|float|bool`, declared by the admin); a wrong type, a missing required param,
+  or an undeclared param is a clean `400` naming the param. Params declared with a default
+  are optional.
+- **Context binds are the killer feature**: a template may reference `:_ctx_user_id`,
+  `:_ctx_user_email` and `:_ctx_org`, which the server injects from the signed-in viewer.
+  A template like `where rep_email = :_ctx_user_email` gives every viewer their own rows —
+  the app passes no identity and cannot forge one (a caller-supplied `_ctx*` param is
+  rejected with a 400).
+- **Prefer a saved query over ad-hoc SQL** when one exists for your need: admins can
+  grant-gate invocation per query, the SQL stays server-side, and per-caller row scoping
+  comes free. `savedQueries()` tells you what's callable; ask the org admin (or use
+  `railcode query create`, admin-only) to publish new ones.
+- Invoking an unknown query is a `404`; a query the viewer isn't granted is a `403` — show
+  a clean state for both.
 
 ## Service Connectors (third-party HTTP)
 
@@ -262,11 +297,12 @@ const result = await llm.generate("Classify this customer.", {
   `~/.railcode/dev/<instance>/<app>/`. The KV query engine is a port of the backend, so
   `where`/`prefix`/`orderBy`/`page`/`first`/`count` behave exactly as in production.
 - `designSystem()`, `data()/postgres()/bigquery()/snowflake().runSQL()`, `dataConnectors()`,
-  `serviceConnectors()`, `connector().fetch()`, and `llm` **forward to the real instance** when
-  the CLI has a saved token — real provider, quota, databases, and connectors (real spend + data).
-- Not logged in: `dataConnectors()`/`serviceConnectors()` return empty and
-  `data().runSQL()`/`llm` return `503` (never `401`). The startup banner says which mode
-  you're in, so you don't have to fire a request to find out.
+  `query()`/`savedQueries()`, `serviceConnectors()`, `connector().fetch()`, and `llm`
+  **forward to the real instance** when the CLI has a saved token — real provider, quota,
+  databases, and connectors (real spend + data).
+- Not logged in: `dataConnectors()`/`serviceConnectors()`/`savedQueries()` return empty and
+  `data().runSQL()`/`query()`/`llm` return `503` (never `401`). The startup banner says
+  which mode you're in, so you don't have to fire a request to find out.
 
 This lets agents build most app behavior without a live server, then layer on
 production-backed SQL/LLM/connectors once credentials and access are available.

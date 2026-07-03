@@ -160,6 +160,16 @@ connector's `engine` from `dataConnectors()` and pick the matching namespace (or
 configured. `rows` is an array of row objects with `rows.columns` / `rows.rowcount` /
 `rows.truncated` metadata.
 
+**Prefer a saved query when one exists.** Check `savedQueries()` first: if an admin has
+published a query that covers your need, invoke it with `query('name', { ...params })`
+instead of writing ad-hoc SQL (same rows shape). You get typed named params, server-side
+SQL, and — when the template uses `:_ctx_user_email` / `:_ctx_user_id` — per-viewer row
+scoping with no identity handling in the app:
+
+```ts
+const mine = await query("my_orders", { region });   // rows already scoped to the viewer
+```
+
 ## Service Connector Pattern
 
 ```ts
