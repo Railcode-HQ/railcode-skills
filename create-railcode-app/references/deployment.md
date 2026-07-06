@@ -26,9 +26,10 @@ service.
   **successful** deploy is what creates the app; a failed first deploy leaves no phantom app.
 - **Private on deploy** — `railcode deploy --private` is a one-shot action that sets this
   app's access to `private` for that deploy only; it is never persisted (see App Access).
-- **App manifest** — a `manifest.yaml` in the app directory (app authority: saved queries,
-  connector endpoints, LLM, ad-hoc SQL under `run_as: app`/`user`) is uploaded and ratified as
-  part of the deploy. No manifest = pass-through (`run_as: user`). See
+- **App manifest** — always write a `manifest.yaml` in the app directory. It declares app
+  authority for saved queries, connector endpoints, LLM, and, only when explicitly requested,
+  ad-hoc SQL under `run_as: app`/`user`; it is uploaded and ratified as part of the deploy.
+  For pass-through apps, use a minimal `run_as: user` manifest. See
   [cli-workflow.md](cli-workflow.md#app-manifest-authority).
 - **Output resolution** — `railcode.json` `dist` wins (`"."` = no-build static); else
   `build` + `dist/`; else a `package.json` build script runs `<pm> run build` (your app's

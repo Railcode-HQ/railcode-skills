@@ -308,8 +308,8 @@ Deploy behavior:
 - `--private` is a **one-shot** flag that sets this app's access to `private` as part of this
   deploy only — it is never persisted (see [App Access](#app-access)). `railcode init` no
   longer accepts `--private`.
-- If the app directory has a `manifest.yaml`, the deploy sends it and prints the ratification
-  outcome (see [App Manifest](#app-manifest-authority)).
+- The app directory should have a `manifest.yaml`; deploy sends it and prints the
+  ratification outcome (see [App Manifest](#app-manifest-authority)).
 - Uses the saved API token (or `RAILCODE_API_TOKEN`); clears the token and asks you to log in
   again on `401`.
 - Prints the live URL `http://<app>.<org>.<serving-domain>/` after upload.
@@ -348,25 +348,30 @@ stays flipped). There is no persisted `private` key in `railcode.json`.
 
 ## App Manifest (Authority)
 
-*(New in CLI 0.1.15 — granular permissions.)* An optional `manifest.yaml` beside
-`railcode.json` declares **which privileged operations an app performs and whose authority
-they run under**. It's separate from `railcode.json` (which stays `{ app, build?, dist?, dev? }`)
-and is uploaded on deploy.
+*(New in CLI 0.1.15 — granular permissions.)* Always write a `manifest.yaml` beside
+`railcode.json` for every app you build or materially change. It declares **which privileged
+operations an app performs and whose authority they run under**. It's separate from
+`railcode.json` (which stays `{ app, build?, dist?, dev? }`) and is uploaded on deploy.
 
-**Default (no `manifest.yaml`): `run_as: user`** — pass-through, exactly the pre-manifest
-behavior. Every call runs as the signed-in caller with *their* grants; the app borrows no
-authority and there is nothing to ratify. Most apps need no manifest.
+For pass-through apps, write an explicit minimal manifest:
+
+```yaml
+run_as: user
+```
+
+`run_as: user` means every call runs as the signed-in caller with *their* grants; the app
+borrows no authority and there is nothing to ratify.
 
 A manifest with `run_as: app` makes the app run privileged operations under its own **ratified**
 authority (so callers who lack those grants can still use the feature through the app). Shape:
 
 ```yaml
-run_as: app                 # or: user (the default when there is no file)
+run_as: app                 # or: user for pass-through apps
 saved_queries: [my_orders]  # saved queries the app may invoke
 connectors:                 # service-connector endpoints, per connector
   stripe: ["POST /v1/charges", "GET /v1/charges"]
 llm: true                   # LLM gateway access
-adhoc_sql: [analytics]      # ad-hoc SQL on a connection (scarce — prefer saved_queries)
+adhoc_sql: [analytics]      # only when the user explicitly requested direct/ad-hoc SQL
 ```
 
 Commands:
@@ -384,8 +389,9 @@ railcode manifest show <app>        # the app's ratified doc + any pending diff 
 - **On deploy**, the manifest is ratified against the deployer's own grants: operations you
   already hold ratify immediately; operations you **don't** hold land as a **pending diff
   awaiting approval** by someone who does. Deploy prints the outcome (`ratified` / `unchanged`
-  / `removed`, plus any pending additions). Deleting the file reverts the app to pass-through.
+  / `removed`, plus any pending additions). Deleting the file reverts the app to pass-through,
+  but agents should keep an explicit `run_as: user` manifest unless the user asks to remove it.
 - `manifest show` needs login and app access (403 otherwise); it prints who ratified the
   current doc, its content hash, and any pending additions.
-- `adhoc_sql` grants raw SQL authority and is intentionally scarce — prefer a `saved_queries`
-  entry whenever one covers the need.
+- `adhoc_sql` grants raw SQL authority and is intentionally scarce. Do not add it unless the
+  user explicitly requested direct/ad-hoc SQL; otherwise use `saved_queries`.

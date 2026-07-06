@@ -145,7 +145,28 @@ await files.delete(file.name);
 The file API is the global `files`. Keep file names flat — no `/` folders. For
 user-supplied names, generate a stable id for the file name and keep the display name in KV.
 
-## SQL Pattern (Postgres / BigQuery / Snowflake)
+## Saved Query Pattern (Postgres / BigQuery / Snowflake)
+
+Use saved queries for database access unless the user explicitly tells you to use direct or
+ad-hoc SQL. Do not fall back to direct SQL just because `savedQueries()` does not list a
+perfect match; ask for the saved query name, ask an admin to publish one, or get explicit
+instruction from the user to use direct SQL.
+
+Check `savedQueries()` first and invoke the matching query with `query('name', { ...params })`.
+Saved queries return the same rows shape as direct SQL, with typed named params and
+server-side SQL. When the template uses `:_ctx_user_email` / `:_ctx_user_id`, results are
+row-scoped to the viewer with no identity handling in the app:
+
+```ts
+const available = await savedQueries();
+const mine = await query("my_orders", { region });   // rows already scoped to the viewer
+```
+
+## Direct SQL Pattern (Explicit User Request Only)
+
+Only use `data('name').runSQL()` or the dialect-pinned `postgres`/`bigquery`/`snowflake`
+namespaces when the user explicitly asks for direct/ad-hoc SQL. If you use direct SQL, use
+placeholders plus params; never concatenate user-selected filters into a SQL string.
 
 ```ts
 const rows = await postgres("analytics").runSQL(
@@ -168,16 +189,6 @@ connector's `engine` from `dataConnectors()` and pick the matching namespace (or
 `data`). Show a useful empty state when `dataConnectors()` is empty or a connection isn't
 configured. `rows` is an array of row objects with `rows.columns` / `rows.rowcount` /
 `rows.truncated` metadata.
-
-**Prefer a saved query when one exists.** Check `savedQueries()` first: if an admin has
-published a query that covers your need, invoke it with `query('name', { ...params })`
-instead of writing ad-hoc SQL (same rows shape). You get typed named params, server-side
-SQL, and — when the template uses `:_ctx_user_email` / `:_ctx_user_id` — per-viewer row
-scoping with no identity handling in the app:
-
-```ts
-const mine = await query("my_orders", { region });   // rows already scoped to the viewer
-```
 
 ## Service Connector Pattern
 

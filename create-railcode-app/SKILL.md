@@ -1,7 +1,7 @@
 ---
 name: create-railcode-app
 description: Build, modify, debug, and deploy Railcode static apps end-to-end. Use when creating a Railcode app from an idea, using the Railcode CLI, wiring the zero-config SDK globals, explaining Railcode auth/data "magic", testing with railcode dev, understanding app access, or deploying apps to a Railcode server.
-version: 0.1.14
+version: 0.1.15
 ---
 
 # Create Railcode App
@@ -18,7 +18,7 @@ railcode --version             # what's installed
 If they differ, upgrade the CLI: `npm install -g railcode@latest` (or
 `pnpm add -g railcode@latest`). It's a regular npm package, not a self-updating binary.
 
-This skill was last written against **CLI 0.1.17** (the multi-tenant Railcode platform).
+This skill was last written against **CLI 0.1.18** (the multi-tenant Railcode platform).
 That number is provenance, not a target to match — npm is the source of truth for "latest."
 If the latest published CLI is newer, the skill itself may lag, so update it too:
 
@@ -53,10 +53,12 @@ least:
 - **What & who** — what should the app do, and who uses it? (drives access policy and
   whether data is per-user or shared)
 - **Data** — what does it store or read? Per-user records or shared across the app's users?
-  Any external database (Postgres/BigQuery/Snowflake) to query via `data('name').runSQL()`
-  or a dialect-pinned `postgres`/`bigquery`/`snowflake` namespace — or better, an
-  admin-published **saved query** invoked with `query('name', params)`? Any third-party SaaS
-  API to reach via a `connector('name').fetch()` service connector? Any `llm` use?
+  Any external database (Postgres/BigQuery/Snowflake) must be accessed through an
+  admin-published **saved query** invoked with `query('name', params)` unless the user
+  explicitly tells you to use direct/ad-hoc SQL. If the user asks for direct SQL, use
+  `data('name').runSQL()` or a dialect-pinned `postgres`/`bigquery`/`snowflake` namespace
+  with bound params. Any third-party SaaS API to reach via a `connector('name').fetch()`
+  service connector? Any `llm` use?
 - **Design** — *"Should I use the default Railcode design system, or do you have a specific
   design direction?"* (drives step 2)
 - **Browser testing** — *"Should I test my changes in a browser before calling it done?"*
@@ -81,6 +83,11 @@ use the fallback in the **Visual Direction** section.
 
 Scaffold and develop locally — see the **Core Workflow** and **Local Development**
 sections — following the **Implementation Rules**.
+
+Always write or update the app's `manifest.yaml` beside `railcode.json`. Use `run_as: user`
+for pass-through apps with no privileged app authority, and `run_as: app` only when the app
+needs ratified saved-query, connector, LLM, or explicitly requested direct-SQL authority.
+Validate it with `railcode manifest validate` before deploy.
 
 ### 4. Test before calling it done
 
@@ -155,13 +162,14 @@ directly (in TypeScript, `declare` them or add an ambient `.d.ts`). The global S
   `bigquery('name')` / `snowflake('name')` only reach connections of that engine. Each takes
   `.runSQL(query, params)`, or `.runSQL(...)` alone for the connection named `default`.
   `dataConnectors()` lists configured connections as `{ engine, name }` (engine is one of
-  `postgres`, `bigquery`, `snowflake`).
+  `postgres`, `bigquery`, `snowflake`). Do not use direct/ad-hoc SQL unless the user
+  explicitly asks for it; saved queries are the default for database access.
 - `query(name, params?)` → invoke an admin-published **saved query** by name (returns the
   same rows shape as `runSQL`); `savedQueries()` lists the callable signatures
-  (`{ name, description, params, version }` — never the SQL). Prefer a saved query over
-  ad-hoc SQL when one exists: the server injects `_ctx_*` binds from the signed-in viewer,
-  so results can be row-scoped per caller without the app passing any identity. (New in
-  CLI/SDK 0.1.14.)
+  (`{ name, description, params, version }` — never the SQL). Always use a saved query for
+  database access unless the user explicitly tells you to use direct/ad-hoc SQL. The server
+  injects `_ctx_*` binds from the signed-in viewer, so results can be row-scoped per caller
+  without the app passing any identity. (New in CLI/SDK 0.1.14.)
 - `connector('name').fetch(path, opts)` → call an admin-configured third-party SaaS API
   through the server-side proxy (the credential never reaches the browser);
   `serviceConnectors()` lists the connectors this app may call.
@@ -195,7 +203,7 @@ Model data intentionally:
 
 Run `railcode dev` from the app directory (any directory with a `railcode.json`). It serves the app at the first available local port starting at `http://127.0.0.1:7331`, runs the app's own dev server (Vite) and reverse-proxies it (HMR included) when there's a `package.json` `dev` script, serves the SDK at `/_api/sdk.js`, and stores local KV/files under `~/.railcode/dev/<instance>/<app>/` (namespaced per instance+org). Use the printed URL; it may be `7332` or higher when another dev server is already running. Useful flags: `--port <n>` (starting proxy port), `--asset-port <n>` (starting Vite port), `--reset` (wipe this app's local KV/files first).
 
-Local dev emulates identity (`me`), app users, KV, and files entirely on local disk. The design system, SQL (`data`/`postgres`/`bigquery`/`snowflake`), data connectors, saved queries (`query`/`savedQueries`), service connectors, and LLM are **forwarded to the configured Railcode instance** when the CLI has a saved API token — so those use the org's real provider, quota, and databases (real spend, real data). Not logged in: `dataConnectors()`/`serviceConnectors()`/`savedQueries()` return empty and `data().runSQL()`/`query()`/`llm` return `503`. The startup banner prints which mode you're in.
+Local dev emulates identity (`me`), app users, KV, and files entirely on local disk. The design system, SQL (`data`/`postgres`/`bigquery`/`snowflake`), data connectors, saved queries (`query`/`savedQueries`), service connectors, and LLM are **forwarded to the configured Railcode instance** when the CLI has a saved API token — so those use the org's real provider, quota, and databases (real spend, real data). Not logged in: `dataConnectors()`/`serviceConnectors()`/`savedQueries()` return empty and `data().runSQL()`/`query()`/`llm` return `503`. The startup banner prints which mode you're in. Even in local development, prefer `query()`/`savedQueries()` and do not use direct SQL unless explicitly instructed.
 
 ## Validation
 
