@@ -1,7 +1,7 @@
 ---
 name: create-railcode-app
 description: Build, modify, debug, and deploy Railcode static apps end-to-end. Use when creating a Railcode app from an idea, using the Railcode CLI, wiring the zero-config SDK globals, explaining Railcode auth/data "magic", testing with railcode dev, understanding app access, or deploying apps to a Railcode server.
-version: 0.1.12
+version: 0.1.13
 ---
 
 # Create Railcode App
@@ -18,7 +18,7 @@ railcode --version             # what's installed
 If they differ, upgrade the CLI: `npm install -g railcode@latest` (or
 `pnpm add -g railcode@latest`). It's a regular npm package, not a self-updating binary.
 
-This skill was last written against **CLI 0.1.14** (the multi-tenant Railcode platform).
+This skill was last written against **CLI 0.1.16** (the multi-tenant Railcode platform).
 That number is provenance, not a target to match — npm is the source of truth for "latest."
 If the latest published CLI is newer, the skill itself may lag, so update it too:
 
@@ -138,7 +138,12 @@ directly (in TypeScript, `declare` them or add an ambient `.d.ts`). The global S
   `prefix(...)`; query-only methods include `updatedSince`/`updatedBefore`/`orderBy`/
   `page`/`first`/`count`.
 - `files` → `upload(name, data, contentType?)`, `url(name)`, `list()`, `delete(name)`.
-- `llm` → `llm.generate(input, opts)` and the streaming `llm.stream(input, opts)`.
+- `llm` → `llm.generate(input, opts)` and the streaming `llm.stream(input, opts)`;
+  `llmProviders()` lists the org's configured providers as
+  `{ provider, default, models: [{ model, default }] }`. Calls route by `(provider, model)`:
+  pass `opts.model` (a catalog model name — its provider is implied) and/or `opts.provider`
+  (alone → that provider's default model), or neither to use the org default. Apps never see
+  API keys. (Multi-model discovery new in CLI/SDK 0.1.15.)
 - `data('name').runSQL(query, params)` runs SQL against a connection of any kind
   (dispatched on its stored engine server-side); the dialect-pinned `postgres('name')` /
   `bigquery('name')` / `snowflake('name')` only reach connections of that engine. Each takes
@@ -219,14 +224,17 @@ The app is **created-or-resolved by slug in your saved org**, then the live URL 
 ### Access
 
 A newly created app defaults to **`organization`** access — every member of your org can
-open it. Access is set in the **admin UI** (or via
-`PUT /api/organizations/{org}/apps/{app}/access`), not at deploy time. The three modes are:
+open it. Access is otherwise managed in the **admin UI** (or via
+`PUT /api/organizations/{org}/apps/{app}/access`); the one deploy-time exception is
+`railcode deploy --private`, a **one-shot** flag that sets the app private for that single
+deploy only — it is never persisted (`railcode init` no longer accepts or writes a private
+flag). The three modes are:
 
 - **`organization`** — every org member (the default).
 - **`private`** — owners only.
 - **`restricted`** — owners plus explicitly-granted members.
 
 Org admins/owners bypass per-app access (they can see and manage every app). If an app holds
-sensitive data, deploy it and then set it to `private`/`restricted` in the admin console
-before sharing the URL widely. For verification steps, read the
+sensitive data, deploy it with `--private` (or set `private`/`restricted` in the admin
+console) before sharing the URL widely. For verification steps, read the
 [Deployment reference](references/deployment.md).

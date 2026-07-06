@@ -49,8 +49,8 @@ declare const db: {
     prefix(value: string): /* Query */ any;
   };
 };
-// likewise: files, llm, data, postgres, bigquery, snowflake, dataConnectors, connector,
-// serviceConnectors, designSystem
+// likewise: files, llm, llmProviders, data, postgres, bigquery, snowflake, dataConnectors,
+// connector, serviceConnectors, designSystem
 ```
 
 If a global is `undefined` at runtime, the page is almost certainly being served directly by
@@ -236,6 +236,16 @@ const result = await llm.generate(prompt, {
 
 Streaming is text-only (`llm.stream()` rejects JSON output). Render provider errors and
 token-cap failures as normal app states; do not retry indefinitely.
+
+Model selection is optional. Omit `provider`/`model` and the call uses the org default. To let
+the app target a specific model, enumerate the org's catalog with `llmProviders()`
+(`[{ provider, default, models: [{ model, default }] }]`) and pass `opts.model` (its provider
+is implied) and/or `opts.provider` (alone → that provider's default model):
+
+```ts
+const providers = await llmProviders();          // discover the configured (provider, model) catalog
+const result = await llm.generate(prompt, { model: "claude-opus-4-8", metadata: { feature: "draft" } });
+```
 
 ## Build And Check
 

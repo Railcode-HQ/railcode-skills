@@ -79,7 +79,7 @@ const out  = await llm.generate("Summarize this record.", { metadata: { feature:
 
 The globals are exactly: `me`, `appUsers`, `designSystem`, `db`, `files`, `data`, `postgres`,
 `bigquery`, `snowflake`, `dataConnectors`, `query`, `savedQueries`, `connector`,
-`serviceConnectors`, `llm`. Notes:
+`serviceConnectors`, `llm`, `llmProviders`. Notes:
 
 - `me()` returns nested objects. Use **`me().user.uuid`** as the stable per-user key for
   ownership/permissions/KV prefixes; `me().user.name`/`.email` are for display.
@@ -265,7 +265,9 @@ truncated at a size limit (`resp.truncated`).
 
 ## LLM
 
-LLM setup is admin-controlled — apps do not choose providers, models, or API keys:
+API keys and the org default `(provider, model)` are admin-controlled — apps never see keys.
+An org can configure **many models across many providers**; an app may optionally target a
+specific `(provider, model)` from that catalog, or send neither and get the org default:
 
 ```js
 const result = await llm.generate("Classify this customer.", {
@@ -287,7 +289,11 @@ const result = await llm.generate("Classify this customer.", {
 ```
 
 - Input is a prompt string **or** a `messages: [{ role, content }]` array. Options:
-  `model`, `system`, `output`, `temperature`, `maxOutputTokens`, `metadata`.
+  `provider`, `model`, `system`, `output`, `temperature`, `maxOutputTokens`, `metadata`.
+- `llmProviders()` lists the callable catalog as `{ provider, default, models: [{ model,
+  default }] }` (the same data `railcode llm providers` prints). Pass a catalog `model` (its
+  provider is implied) and/or a `provider` (alone → that provider's default model); omit both
+  for the org default. *(Multi-model discovery new in SDK 0.1.15.)*
 - `llm.generate()` supports `{ output: { type: "json", schema } }`. JSON schemas run in
   **strict mode**: every object must set `additionalProperties: false` and list **all** keys
   in `required` — make optional fields nullable (`{ type: ["string", "null"] }`) rather than
@@ -307,9 +313,9 @@ const result = await llm.generate("Classify this customer.", {
   `~/.railcode/dev/<instance>/<app>/`. The KV query engine is a port of the backend, so
   `where`/`prefix`/`orderBy`/`page`/`first`/`count` behave exactly as in production.
 - `designSystem()`, `data()/postgres()/bigquery()/snowflake().runSQL()`, `dataConnectors()`,
-  `query()`/`savedQueries()`, `serviceConnectors()`, `connector().fetch()`, and `llm`
-  **forward to the real instance** when the CLI has a saved token — real provider, quota,
-  databases, and connectors (real spend + data).
+  `query()`/`savedQueries()`, `serviceConnectors()`, `connector().fetch()`, `llm`, and
+  `llmProviders()` **forward to the real instance** when the CLI has a saved token — real
+  provider, quota, databases, and connectors (real spend + data).
 - Not logged in: `dataConnectors()`/`serviceConnectors()`/`savedQueries()` return empty and
   `data().runSQL()`/`query()`/`llm` return `503` (never `401`). The startup banner says
   which mode you're in, so you don't have to fire a request to find out.

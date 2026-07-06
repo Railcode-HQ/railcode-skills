@@ -9,11 +9,13 @@ The CLI ships as the npm package **`railcode`**. Its full command set is:
 railcode login [--api-url <url>]              Sign in (browser) and mint a personal API token
 railcode init <app> [--template static|react] Scaffold a new app directory
 railcode dev [--port <n>] [--asset-port <n>] [--reset]   Run the app locally against an emulated /_api
-railcode deploy                               Build (if configured) and deploy the app here
+railcode deploy [--private]                   Build (if configured) and deploy the app here
 railcode design-system                        Print your org's design-system guidance (markdown)
 railcode db <list|query> ...                  List data connectors / run ad-hoc SQL
 railcode query <list|run|create|update|delete> ...   Saved queries: invoke by name / author (admin)
 railcode connector <list|docs|fetch> ...      List service connectors / read API docs / proxy one HTTP call
+railcode llm <providers|models>               List the LLM providers/models apps can call
+railcode manifest <validate|show> ...         Validate manifest.yaml / show an app's ratified authority manifest
 railcode --version
 railcode --help
 ```
@@ -117,15 +119,17 @@ real instance:
 - `/_api/files*` — bytes under `~/.railcode/dev/<instance>/<app>/files/`, metadata in
   `files.json`.
 - `/_api/connections`, `/_api/sql`, `/_api/llm/generate`, `/_api/llm/stream`,
-  `/_api/service-connectors`, `/_api/service-connectors/request` — **proxied to the real
-  instance** with your saved token (app-scoped under `/api/organizations/{org}/apps/{app}/…`).
+  `/_api/llm/providers`, `/_api/service-connectors`, `/_api/service-connectors/request` —
+  **proxied to the real instance** with your saved token (app-scoped under
+  `/api/organizations/{org}/apps/{app}/…`).
   These hit the org's real provider, quota, databases, and connectors — **real spend and real
   data**. The first real compute call (`llm`/`sql`/a connector `request`) creates the app
   server-side if it doesn't exist yet; a load-time list (`GET /connections`,
   `/service-connectors`) only resolves an existing app, never creates one.
 
-When you're **not logged in**, the list endpoints (`connections`, `service-connectors`)
-degrade to empty and the call endpoints (`llm`, `sql`, a connector `request`) return `503`
+When you're **not logged in**, the list endpoints (`connections`, `service-connectors`,
+`llm/providers`) degrade to empty and the call endpoints (`llm`, `sql`, a connector
+`request`) return `503`
 (never `401`, which the SDK would treat as a session lapse and reload-loop on). The startup
 banner states which mode you're in.
 
@@ -250,10 +254,36 @@ required**, hitting the same `/api/organizations/{org}/data/*` plane.
   exclusive), `--json` prints the raw `{ status, ok, headers, body, truncated }` envelope. A
   non-2xx upstream status is still printed, but the command exits non-zero.
 
+## LLM Gateway
+
+*(New in CLI 0.1.15.)*
+
+```bash
+railcode llm providers            # configured providers, each with its models
+railcode llm models               # flat list of every callable model
+railcode llm providers --json     # raw provider array
+```
+
+`railcode llm` shows the org's LLM gateway exactly as apps see it — the same catalog the
+in-app `llmProviders()` SDK global returns. Like `railcode db`/`connector`, it's **org-scoped**
+and works straight after `railcode login`, no app or `railcode.json` required
+(`GET /api/organizations/{org}/llm/providers`).
+
+- `railcode llm providers` (alias `provider`) — one row per provider (`provider`, whether it's
+  the org default, and its models joined in a cell with the default model marked).
+- `railcode llm models` (alias `model`) — one row per `(model, provider)` with the org default
+  marked.
+- Keys, LiteLLM strings, and cost rates are never shown.
+
+An org can configure **many models across many providers**. In app code, calls route by
+`(provider, model)`: pass `opts.model` (a catalog model name — its provider is implied) and/or
+`opts.provider` (a provider name alone → that provider's default model) to `llm.generate()` /
+`llm.stream()`, or pass neither to use the org default marked in the listing.
+
 ## Deploy An App With The CLI
 
 ```bash
-railcode deploy
+railcode deploy [--private]
 ```
 
 Deploy behavior:
@@ -264,9 +294,15 @@ Deploy behavior:
   to the org-scoped multipart deploy API
   (`POST /api/organizations/{org}/apps/{appUuid}/deploy`).
 - Skips `.git`, `node_modules`, `.DS_Store`, and (at the app root) `railcode.json`,
-  `package.json`, `pnpm-lock.yaml`.
-- The app is **created-or-resolved by slug in your saved org**; first deploy creates it with
-  the default **`organization`** access mode.
+  `package.json`, `pnpm-lock.yaml`, `manifest.yaml`.
+- The app is **created-or-resolved by slug in your saved org**. On the **first successful**
+  deploy for a slug the server creates the app (default **`organization`** access); a failed
+  first deploy leaves no phantom not-deployed app behind.
+- `--private` is a **one-shot** flag that sets this app's access to `private` as part of this
+  deploy only — it is never persisted (see [App Access](#app-access)). `railcode init` no
+  longer accepts `--private`.
+- If the app directory has a `manifest.yaml`, the deploy sends it and prints the ratification
+  outcome (see [App Manifest](#app-manifest-authority)).
 - Uses the saved API token (or `RAILCODE_API_TOKEN`); clears the token and asks you to log in
   again on `401`.
 - Prints the live URL `http://<app>.<org>.<serving-domain>/` after upload.
@@ -286,8 +322,8 @@ The `railcode.json` schema is `{ app, build?, dist?, dev?: { root?, command?, po
 ## App Access
 
 A new app defaults to **`organization`** access — every member of your org may open it.
-Access is set in the **admin UI**, or via the access API. The owner or an org admin changes
-it:
+Access is otherwise managed in the **admin UI**, or via the access API. The owner or an org
+admin changes it:
 
 ```text
 GET  /api/organizations/{org}/apps/{app}/access
@@ -297,3 +333,52 @@ PUT  /api/organizations/{org}/apps/{app}/access      { "mode": "...", ... }
 Modes: `organization` (every org member, the default), `private` (owners only), `restricted`
 (owners plus explicitly-granted members). Org admins/owners bypass per-app access entirely.
 See [platform-magic.md](platform-magic.md) for the access model.
+
+The only deploy-time control is `railcode deploy --private`: a **one-shot** action that sets
+`mode: private` on that deploy and nothing more (it doesn't persist a flag anywhere, so a
+later plain `railcode deploy` won't re-assert it — flip access back in the dashboard and it
+stays flipped). There is no persisted `private` key in `railcode.json`.
+
+## App Manifest (Authority)
+
+*(New in CLI 0.1.15 — granular permissions.)* An optional `manifest.yaml` beside
+`railcode.json` declares **which privileged operations an app performs and whose authority
+they run under**. It's separate from `railcode.json` (which stays `{ app, build?, dist?, dev? }`)
+and is uploaded on deploy.
+
+**Default (no `manifest.yaml`): `run_as: user`** — pass-through, exactly the pre-manifest
+behavior. Every call runs as the signed-in caller with *their* grants; the app borrows no
+authority and there is nothing to ratify. Most apps need no manifest.
+
+A manifest with `run_as: app` makes the app run privileged operations under its own **ratified**
+authority (so callers who lack those grants can still use the feature through the app). Shape:
+
+```yaml
+run_as: app                 # or: user (the default when there is no file)
+saved_queries: [my_orders]  # saved queries the app may invoke
+connectors:                 # service-connector endpoints, per connector
+  stripe: ["POST /v1/charges", "GET /v1/charges"]
+llm: true                   # LLM gateway access
+adhoc_sql: [analytics]      # ad-hoc SQL on a connection (scarce — prefer saved_queries)
+```
+
+Commands:
+
+```bash
+railcode manifest validate [path]   # strict local parse (default ./manifest.yaml)
+railcode manifest show <app>        # the app's ratified doc + any pending diff (by slug); --json
+```
+
+- `manifest validate` parses the file with the **same strict YAML grammar the server uses**
+  (spaces not tabs; PyYAML 1.1 scalar rules — e.g. a bare `yes`/`no`/`on`/`off`/`null`/number
+  resolves to a non-string and is rejected where a name is expected). It prints a summary of
+  the declared operations; resource **names** (queries, connectors, connections) are only
+  checked against your org at deploy.
+- **On deploy**, the manifest is ratified against the deployer's own grants: operations you
+  already hold ratify immediately; operations you **don't** hold land as a **pending diff
+  awaiting approval** by someone who does. Deploy prints the outcome (`ratified` / `unchanged`
+  / `removed`, plus any pending additions). Deleting the file reverts the app to pass-through.
+- `manifest show` needs login and app access (403 otherwise); it prints who ratified the
+  current doc, its content hash, and any pending additions.
+- `adhoc_sql` grants raw SQL authority and is intentionally scarce — prefer a `saved_queries`
+  entry whenever one covers the need.

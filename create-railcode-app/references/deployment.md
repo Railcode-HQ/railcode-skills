@@ -22,7 +22,14 @@ service.
 - **Auth** — the saved personal API token, or `RAILCODE_API_TOKEN` for non-interactive
   deploys. On a `401` the token is cleared and you're asked to `railcode login` again.
 - **Where it lands** — the app is created-or-resolved by slug in your saved org
-  (`POST /api/organizations/{org}/apps/{appUuid}/deploy`, a multipart upload).
+  (`POST /api/organizations/{org}/apps/{appUuid}/deploy`, a multipart upload). The first
+  **successful** deploy is what creates the app; a failed first deploy leaves no phantom app.
+- **Private on deploy** — `railcode deploy --private` is a one-shot action that sets this
+  app's access to `private` for that deploy only; it is never persisted (see App Access).
+- **App manifest** — a `manifest.yaml` in the app directory (app authority: saved queries,
+  connector endpoints, LLM, ad-hoc SQL under `run_as: app`/`user`) is uploaded and ratified as
+  part of the deploy. No manifest = pass-through (`run_as: user`). See
+  [cli-workflow.md](cli-workflow.md#app-manifest-authority).
 - **Output resolution** — `railcode.json` `dist` wins (`"."` = no-build static); else
   `build` + `dist/`; else a `package.json` build script runs `pnpm run build` and `dist/` is
   uploaded; else an interactive root-`index.html` deploy.
@@ -33,7 +40,8 @@ After upload the CLI prints the live URL: `http://<app>.<org>.<serving-domain>/`
 ## App Access
 
 A newly created app defaults to **`organization`** access (every member of the org may open
-it). The owner or an org admin sets access in the **admin UI**, or via the access API:
+it). The owner or an org admin sets access in the **admin UI**, or via the access API (the
+one deploy-time exception is the one-shot `railcode deploy --private`, above):
 
 ```text
 GET  /api/organizations/{org}/apps/{app}/access
