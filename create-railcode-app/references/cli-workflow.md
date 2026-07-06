@@ -78,14 +78,19 @@ Behavior:
 
 Templates:
 
-- **`static`** (default) — a no-build app: `index.html` that loads `/_api/sdk.js` and demos
+- **`react`** (default) — a React 19 + Vite 7 + Zustand 5 + TypeScript starter that builds to
+  `dist/`, with `railcode.json` `{ "app": "<slug>", "build": "npm run build", "dist": "dist" }`.
+  Run `npm install` before `railcode dev`/`railcode deploy`.
+- **`static`** — a no-build app: `index.html` that loads `/_api/sdk.js` and demos
   `await me()` + `db.collection().put/get`, plus `railcode.json` with `{ "app": "<slug>",
   "dist": "." }`. No dependencies, no build step.
-- **`react`** — a React 19 + Vite 7 + Zustand 5 + TypeScript starter that builds to `dist/`,
-  with `railcode.json` `{ "app": "<slug>", "build": "pnpm run build", "dist": "dist" }`.
-  Run `pnpm install` before `railcode dev`/`railcode deploy`.
 
 Treat the starter as functional scaffolding, not a style guide.
+
+The CLI runs **your app's** package manager for builds and dev — detected from a
+`packageManager` field or lockfile (pnpm/yarn/bun), defaulting to **`npm`** when there's no
+lockfile (new in CLI 0.1.17; older CLIs hardcoded pnpm). Examples use `npm`; use whatever your
+app declares.
 
 ## Local Dev
 
@@ -103,7 +108,8 @@ slug). Behavior:
   `dev.command`), the CLI runs the app's own dev server (Vite) and reverse-proxies it,
   tunnelling the HMR WebSocket. `--asset-port` / `railcode.json` `dev.port` set the starting
   Vite port (default `5173`). It does **not** install dependencies for you — if
-  `node_modules` is missing it tells you to run `pnpm install` first.
+  `node_modules` is missing it tells you to install them first (`npm install`, or your app's
+  package manager).
 - `--reset` wipes this app's local KV/files before starting.
 
 `railcode dev` emulates the `/_api/*` data plane on local disk and proxies the rest to your
@@ -294,7 +300,8 @@ Deploy behavior:
   to the org-scoped multipart deploy API
   (`POST /api/organizations/{org}/apps/{appUuid}/deploy`).
 - Skips `.git`, `node_modules`, `.DS_Store`, and (at the app root) `railcode.json`,
-  `package.json`, `pnpm-lock.yaml`, `manifest.yaml`.
+  `package.json`, lockfiles (`package-lock.json` / `pnpm-lock.yaml` / `yarn.lock` /
+  `bun.lockb`), `manifest.yaml`.
 - The app is **created-or-resolved by slug in your saved org**. On the **first successful**
   deploy for a slug the server creates the app (default **`organization`** access); a failed
   first deploy leaves no phantom not-deployed app behind.
@@ -312,8 +319,8 @@ Deploy output resolution order:
 1. `railcode.json` `"dist"` wins (use `"."` for a no-build static app). `"build"` still runs
    first if also set.
 2. Otherwise `railcode.json` `"build"` runs and `dist/` is uploaded.
-3. Otherwise a `package.json` with a `build` script runs `pnpm run build` and uploads
-   `dist/`.
+3. Otherwise a `package.json` with a `build` script runs `<pm> run build` — where `<pm>` is
+   your app's package manager (pnpm/yarn/bun by lockfile, else `npm`) — and uploads `dist/`.
 4. Otherwise a root `index.html` can be deployed interactively (a `y/N` prompt); for CI set
    `"dist": "."`.
 

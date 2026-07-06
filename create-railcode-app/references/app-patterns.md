@@ -8,7 +8,7 @@ validation on the **multi-tenant** platform.
 `railcode init <app> --template react` scaffolds a flat Vite app:
 
 ```text
-railcode.json        { "app": "<slug>", "build": "pnpm run build", "dist": "dist" }
+railcode.json        { "app": "<slug>", "build": "npm run build", "dist": "dist" }
 package.json         React 19 + react-dom + Zustand 5; scripts: dev (vite), build (tsc && vite build)
 index.html           loads <script src="/_api/sdk.js"></script> then /src/main.tsx
 tsconfig.json
@@ -252,12 +252,14 @@ const result = await llm.generate(prompt, { model: "claude-opus-4-8", metadata: 
 For the react template:
 
 ```bash
-pnpm install      # first time / when deps change
-pnpm build        # tsc -p tsconfig.json && vite build → dist/
+npm install       # first time / when deps change
+npm run build     # tsc -p tsconfig.json && vite build → dist/
 ```
 
-The static template has no build step. `railcode dev` does **not** install dependencies for
-you — run `pnpm install` yourself when `node_modules` is missing.
+Commands use `npm`; the CLI follows whatever package manager your app declares (a
+`packageManager` field or lockfile — pnpm/yarn/bun), defaulting to `npm`. The static template
+has no build step. `railcode dev` does **not** install dependencies for you — run `npm install`
+(or your manager's install) yourself when `node_modules` is missing.
 
 If the app depends on SQL/LLM/connectors, test both the logged-out path (graceful empty /
 503 states) and the logged-in path (real backend) separately:

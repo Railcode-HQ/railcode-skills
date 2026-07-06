@@ -31,8 +31,9 @@ service.
   part of the deploy. No manifest = pass-through (`run_as: user`). See
   [cli-workflow.md](cli-workflow.md#app-manifest-authority).
 - **Output resolution** — `railcode.json` `dist` wins (`"."` = no-build static); else
-  `build` + `dist/`; else a `package.json` build script runs `pnpm run build` and `dist/` is
-  uploaded; else an interactive root-`index.html` deploy.
+  `build` + `dist/`; else a `package.json` build script runs `<pm> run build` (your app's
+  package manager — pnpm/yarn/bun by lockfile, else `npm`) and `dist/` is uploaded; else an
+  interactive root-`index.html` deploy.
 
 After upload the CLI prints the live URL: `http://<app>.<org>.<serving-domain>/`
 (e.g. `https://my-app.acme.railcode.dev/`).

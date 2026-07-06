@@ -1,7 +1,7 @@
 ---
 name: create-railcode-app
 description: Build, modify, debug, and deploy Railcode static apps end-to-end. Use when creating a Railcode app from an idea, using the Railcode CLI, wiring the zero-config SDK globals, explaining Railcode auth/data "magic", testing with railcode dev, understanding app access, or deploying apps to a Railcode server.
-version: 0.1.13
+version: 0.1.14
 ---
 
 # Create Railcode App
@@ -18,7 +18,7 @@ railcode --version             # what's installed
 If they differ, upgrade the CLI: `npm install -g railcode@latest` (or
 `pnpm add -g railcode@latest`). It's a regular npm package, not a self-updating binary.
 
-This skill was last written against **CLI 0.1.16** (the multi-tenant Railcode platform).
+This skill was last written against **CLI 0.1.17** (the multi-tenant Railcode platform).
 That number is provenance, not a target to match — npm is the source of truth for "latest."
 If the latest published CLI is newer, the skill itself may lag, so update it too:
 
@@ -99,12 +99,18 @@ A normal app-builder loop is:
 ```bash
 railcode init my-app          # scaffolds a standalone ./my-app/ directory
 cd my-app
-pnpm install                  # only for the react template (the static template has no deps)
+npm install                   # only for the react template (the static template has no deps)
 railcode dev                  # local server with an emulated /_api
 railcode deploy               # build (if configured) + upload to your org
 ```
 
 The CLI is the npm package `railcode` (`npm install -g railcode@latest`).
+
+The CLI drives **your app's** package manager, not a fixed one: it detects a `packageManager`
+field or a lockfile (pnpm/yarn/bun) and falls back to **`npm`** when there's no lockfile, so a
+fresh scaffold never forces pnpm onto the machine (new in CLI 0.1.17 — older CLIs hardcoded
+pnpm). Examples here use `npm`; substitute your own manager. Note npm's build is `npm run
+build`, not `npm build`.
 
 Use lowercase app names with digits and dashes only (a DNS label: `^[a-z0-9][a-z0-9-]{0,62}$`).
 `railcode init <app>` scaffolds a single self-contained app directory `./<app>/` — there is
@@ -197,7 +203,7 @@ Before handing off a new or changed app, run the app's normal build (the react t
 
 ```bash
 cd <app>
-pnpm build
+npm run build
 ```
 
 The no-build **static** template has no build step — just confirm the files load via
