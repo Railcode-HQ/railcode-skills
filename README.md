@@ -17,7 +17,7 @@ work across Claude Code, Codex, Cursor, and other agents.
 Install a single skill by name:
 
 ```bash
-npx skills add yakkomajuri/railcode-skills --skill create-railcode-app
+npx skills add Railcode-HQ/railcode-skills --skill create-railcode-app
 ```
 
 Update it later:

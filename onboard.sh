@@ -49,7 +49,7 @@ SKIP_LOGIN=0
 FORCE_LOGIN=0
 NO_DEPLOY=0
 
-SKILL_REPO="yakkomajuri/railcode-skills"
+SKILL_REPO="Railcode-HQ/railcode-skills"
 SKILL_NAME="create-railcode-app"
 CONFIG_PATH="$HOME/.railcode/config.json"
 
