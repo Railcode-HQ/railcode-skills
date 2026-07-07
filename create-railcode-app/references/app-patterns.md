@@ -50,7 +50,7 @@ declare const db: {
   };
 };
 // likewise: files, llm, llmProviders, data, postgres, bigquery, snowflake, dataConnectors,
-// connector, serviceConnectors, designSystem
+// connector, serviceConnectors, designSystem, email
 ```
 
 If a global is `undefined` at runtime, the page is almost certainly being served directly by
@@ -258,6 +258,29 @@ const providers = await llmProviders();          // discover the configured (pro
 const result = await llm.generate(prompt, { model: "claude-opus-4-8", metadata: { feature: "draft" } });
 ```
 
+## Email Pattern
+
+Send transactional email server-side. Apps set only recipients/subject/body; the platform
+owns the sender and appends a disclaimer.
+
+```ts
+const res = await email.send({
+  to: order.customerEmail,                 // string | string[]
+  subject: `Order ${order.id} confirmed`,
+  html: renderReceipt(order),              // html and/or text (at least one)
+  replyTo: "support@acme.com",             // optional; cc/bcc optional too
+});
+// res.id, res.status, res.requestId
+```
+
+`email` is **off by default** and governed: a `run_as: user` app needs the caller to hold the
+`email` grant (admin-granted), or the app declares `email: true` in its manifest under
+`run_as: app`. Expect `403` (not granted), `429` (daily recipient cap — attempts count even
+when the send fails), and `503` (self-hosted or provider unconfigured). Render those as
+ordinary UI states; never retry in a loop. Do not put addresses the user hasn't consented to
+in `to`/`cc`/`bcc`. Under `railcode dev` this forwards to the org's real mailer (real email is
+sent) when logged in — new in CLI 0.1.19.
+
 ## Build And Check
 
 For the react template:
@@ -272,7 +295,7 @@ Commands use `npm`; the CLI follows whatever package manager your app declares (
 has no build step. `railcode dev` does **not** install dependencies for you — run `npm install`
 (or your manager's install) yourself when `node_modules` is missing.
 
-If the app depends on SQL/LLM/connectors, test both the logged-out path (graceful empty /
+If the app depends on SQL/LLM/connectors/email, test both the logged-out path (graceful empty /
 503 states) and the logged-in path (real backend) separately:
 
 ```bash
@@ -292,5 +315,6 @@ RAILCODE_API_URL=https://api.apps.example.com RAILCODE_API_TOKEN=<token> railcod
   (`eq`/`gt`/…). Passing `{ size }` as an object to `page()` — it takes a numeric size.
 - String-concatenating SQL user input creates injection risk even though queries are
   read-only.
-- Assuming SQL/LLM/connectors are always available — they need admin configuration and (in
-  `railcode dev`) a saved login; expect empty/`503` otherwise.
+- Assuming SQL/LLM/connectors/email are always available — they need admin configuration and (in
+  `railcode dev`) a saved login; expect empty/`503` otherwise. Email additionally needs an
+  explicit `email` grant (or `email: true` manifest) — expect `403` until granted.

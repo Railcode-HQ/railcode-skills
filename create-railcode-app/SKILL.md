@@ -1,7 +1,7 @@
 ---
 name: create-railcode-app
 description: Build, modify, debug, and deploy Railcode static apps end-to-end. Use when creating a Railcode app from an idea, using the Railcode CLI, wiring the zero-config SDK globals, explaining Railcode auth/data "magic", testing with railcode dev, understanding app access, or deploying apps to a Railcode server.
-version: 0.1.15
+version: 0.1.16
 ---
 
 # Create Railcode App
@@ -18,7 +18,7 @@ railcode --version             # what's installed
 If they differ, upgrade the CLI: `npm install -g railcode@latest` (or
 `pnpm add -g railcode@latest`). It's a regular npm package, not a self-updating binary.
 
-This skill was last written against **CLI 0.1.18** (the multi-tenant Railcode platform).
+This skill was last written against **CLI 0.1.19** (the multi-tenant Railcode platform).
 That number is provenance, not a target to match — npm is the source of truth for "latest."
 If the latest published CLI is newer, the skill itself may lag, so update it too:
 
@@ -86,7 +86,8 @@ sections — following the **Implementation Rules**.
 
 Always write or update the app's `manifest.yaml` beside `railcode.json`. Use `run_as: user`
 for pass-through apps with no privileged app authority, and `run_as: app` only when the app
-needs ratified saved-query, connector, LLM, or explicitly requested direct-SQL authority.
+needs ratified saved-query, connector, LLM, email, or explicitly requested direct-SQL
+authority.
 Validate it with `railcode manifest validate` before deploy.
 
 ### 4. Test before calling it done
@@ -130,7 +131,7 @@ template) is what `railcode deploy` uploads.
 Load only the reference needed for the task:
 
 - [CLI workflow](references/cli-workflow.md): exact `railcode` commands (login/init/dev/deploy/design-system) and local dev/deploy behavior.
-- [Platform magic](references/platform-magic.md): how same-origin auth, `/_api/sdk.js`, app/org identity, access policies, KV/files, SQL, service connectors, and LLM work.
+- [Platform magic](references/platform-magic.md): how same-origin auth, `/_api/sdk.js`, app/org identity, access policies, KV/files, SQL, service connectors, LLM, and email work.
 - [App patterns](references/app-patterns.md): implementation patterns for React/Vite apps, using the SDK globals, data modeling, SQL, connectors, LLM, and frontend expectations.
 - [Deployment](references/deployment.md): `railcode deploy`, app access, and post-deploy verification.
 
@@ -173,6 +174,13 @@ directly (in TypeScript, `declare` them or add an ambient `.d.ts`). The global S
 - `connector('name').fetch(path, opts)` → call an admin-configured third-party SaaS API
   through the server-side proxy (the credential never reaches the browser);
   `serviceConnectors()` lists the connectors this app may call.
+- `email.send({ to, subject, html?, text?, cc?, bcc?, replyTo? })` → send transactional
+  email through the platform mail gateway; returns `{ id, status, requestId }`. The
+  platform owns the sender identity (a fixed `Railcode <…@mail-service.railcode.app>`
+  From) and appends a disclaimer — apps set only recipients/subject/body, never keys.
+  Governed and **off by default**: the org must grant `email` (or a `run_as: app`
+  manifest declares `email: true`). Per-org daily recipient cap; self-hosted or an
+  unconfigured provider returns `503`. (New in CLI/SDK 0.1.19.)
 
 The SDK also ships a hidden live activity drawer that logs every call; toggle it with
 ``Ctrl+` `` (control + backtick) while developing. It is present in production too, just
@@ -198,12 +206,13 @@ Model data intentionally:
 - Files are scoped per app. File API names cannot contain `/`; encode hierarchy in metadata or key names instead.
 - SQL connections (Postgres/BigQuery/Snowflake) are admin-configured server-side and read-only. Always use placeholders plus params.
 - LLM provider/model/API key are admin-configured server-side. Send `metadata` for audit and attribution.
+- Email goes through the platform gateway server-side (fixed sender, appended disclaimer; apps never handle keys). It is **off by default** — needs an `email` grant or a ratified `email: true` manifest — and rate-limited per org; render `403`/`429`/`503` as normal app states, not retries.
 
 ## Local Development
 
 Run `railcode dev` from the app directory (any directory with a `railcode.json`). It serves the app at the first available local port starting at `http://127.0.0.1:7331`, runs the app's own dev server (Vite) and reverse-proxies it (HMR included) when there's a `package.json` `dev` script, serves the SDK at `/_api/sdk.js`, and stores local KV/files under `~/.railcode/dev/<instance>/<app>/` (namespaced per instance+org). Use the printed URL; it may be `7332` or higher when another dev server is already running. Useful flags: `--port <n>` (starting proxy port), `--asset-port <n>` (starting Vite port), `--reset` (wipe this app's local KV/files first).
 
-Local dev emulates identity (`me`), app users, KV, and files entirely on local disk. The design system, SQL (`data`/`postgres`/`bigquery`/`snowflake`), data connectors, saved queries (`query`/`savedQueries`), service connectors, and LLM are **forwarded to the configured Railcode instance** when the CLI has a saved API token — so those use the org's real provider, quota, and databases (real spend, real data). Not logged in: `dataConnectors()`/`serviceConnectors()`/`savedQueries()` return empty and `data().runSQL()`/`query()`/`llm` return `503`. The startup banner prints which mode you're in. Even in local development, prefer `query()`/`savedQueries()` and do not use direct SQL unless explicitly instructed.
+Local dev emulates identity (`me`), app users, KV, and files entirely on local disk. The design system, SQL (`data`/`postgres`/`bigquery`/`snowflake`), data connectors, saved queries (`query`/`savedQueries`), service connectors, LLM, and email (`email.send`) are **forwarded to the configured Railcode instance** when the CLI has a saved API token — so those use the org's real provider, quota, databases, and mail delivery (real spend, real data, real email). Not logged in: `dataConnectors()`/`serviceConnectors()`/`savedQueries()` return empty and `data().runSQL()`/`query()`/`llm`/`email.send()` return `503`. The startup banner prints which mode you're in. Even in local development, prefer `query()`/`savedQueries()` and do not use direct SQL unless explicitly instructed. Email forwarding under `railcode dev` is new in CLI 0.1.19 — earlier CLIs 404 on `email.send()` locally.
 
 ## Validation
 

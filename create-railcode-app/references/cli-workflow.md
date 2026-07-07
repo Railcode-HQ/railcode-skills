@@ -124,18 +124,19 @@ real instance:
   the same engine production uses.
 - `/_api/files*` — bytes under `~/.railcode/dev/<instance>/<app>/files/`, metadata in
   `files.json`.
-- `/_api/connections`, `/_api/sql`, `/_api/llm/generate`, `/_api/llm/stream`,
-  `/_api/llm/providers`, `/_api/service-connectors`, `/_api/service-connectors/request` —
-  **proxied to the real instance** with your saved token (app-scoped under
-  `/api/organizations/{org}/apps/{app}/…`).
-  These hit the org's real provider, quota, databases, and connectors — **real spend and real
-  data**. The first real compute call (`llm`/`sql`/a connector `request`) creates the app
-  server-side if it doesn't exist yet; a load-time list (`GET /connections`,
-  `/service-connectors`) only resolves an existing app, never creates one.
+- `/_api/connections`, `/_api/sql`, `/_api/queries` + `/_api/queries/{name}`,
+  `/_api/llm/generate`, `/_api/llm/stream`, `/_api/llm/providers`, `/_api/email` +
+  `/_api/email/send`, `/_api/service-connectors` + `/_api/service-connectors/request` —
+  **proxied to the real instance** with your saved token, invoked as the **signed-in user**
+  on the org/user-scoped plane (`/api/organizations/{org}/data/*`, `…/llm/*`, `…/email/*`) —
+  **not** a deployed app, so **no `railcode deploy` is needed first**. These hit the org's
+  real provider, quota, databases, connectors, and mail — **real spend and real data**.
+  Authority is your own grants (a deployed app is instead bound by its ratified manifest).
+  Email forwarding is new in CLI 0.1.19; earlier CLIs 404 on `email.send()` in dev.
 
 When you're **not logged in**, the list endpoints (`connections`, `service-connectors`,
-`llm/providers`) degrade to empty and the call endpoints (`llm`, `sql`, a connector
-`request`) return `503`
+`llm/providers`) degrade to empty and the call endpoints (`llm`, `sql`, `email/send`, a
+connector `request`) return `503`
 (never `401`, which the SDK would treat as a session lapse and reload-loop on). The startup
 banner states which mode you're in.
 
@@ -371,6 +372,7 @@ saved_queries: [my_orders]  # saved queries the app may invoke
 connectors:                 # service-connector endpoints, per connector
   stripe: ["POST /v1/charges", "GET /v1/charges"]
 llm: true                   # LLM gateway access
+email: true                 # transactional email gateway access (email.send)
 adhoc_sql: [analytics]      # only when the user explicitly requested direct/ad-hoc SQL
 ```
 

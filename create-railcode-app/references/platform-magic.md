@@ -79,7 +79,7 @@ const out  = await llm.generate("Summarize this record.", { metadata: { feature:
 
 The globals are exactly: `me`, `appUsers`, `designSystem`, `db`, `files`, `data`, `postgres`,
 `bigquery`, `snowflake`, `dataConnectors`, `query`, `savedQueries`, `connector`,
-`serviceConnectors`, `llm`, `llmProviders`. Notes:
+`serviceConnectors`, `llm`, `llmProviders`, `email`. Notes:
 
 - `me()` returns nested objects. Use **`me().user.uuid`** as the stable per-user key for
   ownership/permissions/KV prefixes; `me().user.name`/`.email` are for display.
@@ -90,7 +90,7 @@ The globals are exactly: `me`, `appUsers`, `designSystem`, `db`, `files`, `data`
   `snowflake`.
 
 The SDK also ships a hidden live inspector drawer that logs every call (`db`, `files`, `llm`,
-`data`/`postgres`/`bigquery`/`snowflake`, `connector`, `me()`, `appUsers()`, `designSystem()`) with a pending → ok/error
+`email`, `data`/`postgres`/`bigquery`/`snowflake`, `connector`, `me()`, `appUsers()`, `designSystem()`) with a pending → ok/error
 transition and timing. It has no on-screen affordance — toggle it with ``Ctrl+` `` (control +
 backtick). It is present in production too, just dormant until opened. Do not swallow SDK
 errors; surface useful error states in the app.
@@ -309,6 +309,37 @@ const result = await llm.generate("Classify this customer.", {
   and input limits enforced server-side; render those failures as normal app states and do
   not retry indefinitely.
 
+## Email
+
+`email.send(opts)` sends transactional email through the platform mail gateway. Apps control
+only recipients, subject, and body — the platform pins the **sender** (a fixed
+`Railcode <…@mail-service.railcode.app>` From) and appends a disclaimer, so an app name can't
+smuggle an address token into the header. Keys never reach the browser.
+
+```js
+const res = await email.send({
+  to: "user@example.com",             // string or string[]
+  subject: "Your report is ready",
+  html: "<p>It's <b>ready</b>.</p>",  // html and/or text (at least one)
+  text: "It's ready.",
+  cc: ["ops@example.com"],            // optional; cc/bcc also string | string[]
+  replyTo: "support@example.com",     // optional
+});
+// res: { id, status, requestId }
+```
+
+- **Off by default.** `email` is not seeded org-wide. A `run_as: user` app needs the
+  signed-in caller to hold the `email` grant (an admin grants it); a `run_as: app` app
+  declares `email: true` in its manifest and it ratifies against the deployer's grants.
+  Ungranted calls return `403`.
+- **Governed, not free.** Each org has a daily recipient cap (attempts count against it,
+  even failed sends) → `429` when exhausted; suppressed (bounced/complained) recipients are
+  rejected. Self-hosted or an unconfigured provider returns `503 email_unavailable`. Render
+  all of these as normal app states — never retry loops.
+- Discovery: `GET /_api/email` reports `{ configured, from, dailyRemaining }` if you need to
+  gate UI, but the SDK surface apps call is just `email.send`.
+- *New in CLI/SDK 0.1.19.*
+
 ## Local Dev Bridge
 
 `railcode dev` preserves the same SDK calling style locally (see
@@ -318,12 +349,14 @@ const result = await llm.generate("Classify this customer.", {
   `~/.railcode/dev/<instance>/<app>/`. The KV query engine is a port of the backend, so
   `where`/`prefix`/`orderBy`/`page`/`first`/`count` behave exactly as in production.
 - `designSystem()`, `data()/postgres()/bigquery()/snowflake().runSQL()`, `dataConnectors()`,
-  `query()`/`savedQueries()`, `serviceConnectors()`, `connector().fetch()`, `llm`, and
-  `llmProviders()` **forward to the real instance** when the CLI has a saved token — real
-  provider, quota, databases, and connectors (real spend + data).
+  `query()`/`savedQueries()`, `serviceConnectors()`, `connector().fetch()`, `llm`,
+  `llmProviders()`, and `email.send()` **forward to the real instance** when the CLI has a
+  saved token — real provider, quota, databases, connectors, and **mail delivery** (real
+  spend + data — `email.send()` sends actual email). Email forwarding is new in CLI 0.1.19;
+  earlier CLIs 404 on `email.send()` in dev.
 - Not logged in: `dataConnectors()`/`serviceConnectors()`/`savedQueries()` return empty and
-  `data().runSQL()`/`query()`/`llm` return `503` (never `401`). The startup banner says
-  which mode you're in, so you don't have to fire a request to find out.
+  `data().runSQL()`/`query()`/`llm`/`email.send()` return `503` (never `401`). The startup
+  banner says which mode you're in, so you don't have to fire a request to find out.
 
 This lets agents build most app behavior without a live server, then layer on
-production-backed SQL/LLM/connectors once credentials and access are available.
+production-backed SQL/LLM/connectors/email once credentials and access are available.

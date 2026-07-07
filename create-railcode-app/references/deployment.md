@@ -27,8 +27,8 @@ service.
 - **Private on deploy** — `railcode deploy --private` is a one-shot action that sets this
   app's access to `private` for that deploy only; it is never persisted (see App Access).
 - **App manifest** — always write a `manifest.yaml` in the app directory. It declares app
-  authority for saved queries, connector endpoints, LLM, and, only when explicitly requested,
-  ad-hoc SQL under `run_as: app`/`user`; it is uploaded and ratified as part of the deploy.
+  authority for saved queries, connector endpoints, LLM, email, and, only when explicitly
+  requested, ad-hoc SQL under `run_as: app`/`user`; it is uploaded and ratified as part of the deploy.
   For pass-through apps, use a minimal `run_as: user` manifest. See
   [cli-workflow.md](cli-workflow.md#app-manifest-authority).
 - **Output resolution** — `railcode.json` `dist` wins (`"."` = no-build static); else
@@ -68,6 +68,6 @@ After an app deploy, open the printed URL `https://<app>.<org>.<BASE_DOMAIN>/` a
 - The app loads `/_api/sdk.js` with no CORS or mixed-content errors.
 - `me()` returns the expected user, app, and org.
 - KV and file reads/writes succeed.
-- SQL / LLM / service-connector features show configured, empty, or disabled states cleanly
-  (never a raw error or a hang).
+- SQL / LLM / service-connector / email features show configured, empty, or disabled states
+  cleanly (never a raw error or a hang) — email also has a `403` (not granted) state.
 - The app's access mode in the admin UI matches the intended audience.
