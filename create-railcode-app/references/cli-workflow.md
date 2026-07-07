@@ -16,6 +16,8 @@ railcode query <list|run|create|update|delete> ...   Saved queries: invoke by na
 railcode connector <list|docs|fetch> ...      List service connectors / read API docs / proxy one HTTP call
 railcode llm <providers|models>               List the LLM providers/models apps can call
 railcode manifest <validate|show> ...         Validate manifest.yaml / show an app's ratified authority manifest
+railcode agent <list|show|pull|create|update|delete|test|run> ...   Manage org-scoped managed agents
+railcode agent schedule <show|set|add|update|pause|resume|delete|run-now> <agent>   The agent's one cron schedule
 railcode --version
 railcode --help
 ```
@@ -286,6 +288,72 @@ An org can configure **many models across many providers**. In app code, calls r
 `(provider, model)`: pass `opts.model` (a catalog model name — its provider is implied) and/or
 `opts.provider` (a provider name alone → that provider's default model) to `llm.generate()` /
 `llm.stream()`, or pass neither to use the org default marked in the listing.
+
+## Managed Agents
+
+*(New in CLI 0.1.20.)* A **managed agent** is a server-side AI agent your org runs —
+defined by a JSON manifest (model, system prompt, tools, optional input schema), stored
+under `agent.manifest`, and invoked on demand or on a cron schedule. This is a distinct
+surface from the static apps this skill mostly builds: agents live in the org, not in an
+app directory. Like `railcode db`/`connector`/`llm`, the commands are **org-scoped** and
+work straight after `railcode login` — **no app or `railcode.json` required** — hitting
+`/api/organizations/{org}/agents`.
+
+```bash
+railcode agent list                                     # name, model, uuid, updated
+railcode agent show <agent> [--manifest]                # one agent (or just its manifest JSON)
+railcode agent pull <agent> [--output agent.json]       # write the manifest for editing (stdout by default)
+railcode agent create --file agent.json                 # create from a JSON manifest
+railcode agent update <agent> --file agent.json         # replace an existing agent's manifest
+railcode agent delete <agent> [--yes]                   # archive it (run history is kept)
+railcode agent test --file agent.json --input '{"k":"v"}'   # run a draft manifest without saving
+railcode agent run <agent> --input '{"k":"v"}' [--trace]    # invoke a saved agent, print the result
+```
+
+- An `<agent>` reference is a **name or a UUID** (either resolves). Aliases: `list`=`ls`,
+  `show`=`get`, `pull`=`export`, `update`=`edit`, `delete`=`rm`, `run`=`invoke`;
+  `agent`=`agents`.
+- **Manifests are JSON** in the exact `agent.manifest` shape the API stores (note the
+  contrast with **app** manifests, which are YAML). `agent pull` writes the current
+  manifest so you can edit and re-`update` it; `agent show --manifest` prints it to stdout.
+- **`create`/`update`** print the agent name, UUID, and any ratification **warnings**;
+  `--json` prints the raw response. `delete` **archives** the agent (its run history is
+  kept) — it prompts unless you pass `--yes`, and requires `--yes` in a non-interactive
+  session.
+- **`run`/`test`** take input from `--input '<json>'` or `--input-file <path>` (default
+  `null`; the two are mutually exclusive) and print `Status:`, the request id, and the
+  output JSON. `--trace` appends the step trace (a table of each model/tool step);
+  `--json` prints the raw run detail. `test` runs an unsaved draft manifest; `run` invokes
+  a saved agent. Note the invocation exits **0** whenever the request itself succeeds — a
+  run that *fails at runtime* (a limit or model error) still prints its failed `Status` and
+  exits 0; only invalid input (schema mismatch) is a non-zero `422`. Check `Status:`/`--json`
+  in scripts rather than relying solely on the exit code.
+- **Permissions:** `list`/`show`/`pull` need agent-read; `run` also needs an
+  agent-invoke grant for that agent; `create`/`update`/`delete`/`test` and every
+  `schedule` mutation are **owner/admin** (403 otherwise).
+
+### Agent Schedules
+
+Each agent has **at most one** cron schedule (the poller fires it server-side). Schedules
+are a resource *under* the agent, not part of the manifest.
+
+```bash
+railcode agent schedule show <agent>                                  # the one schedule (or "no schedule")
+railcode agent schedule set <agent> --cron "0 9 * * *" --timezone UTC # create if missing, else update (upsert)
+railcode agent schedule pause <agent>                                 # disable without deleting
+railcode agent schedule resume <agent>                                # re-enable
+railcode agent schedule run-now <agent> [--trace]                     # fire it immediately, print the run
+railcode agent schedule delete <agent> [--yes]                        # remove the schedule
+```
+
+- **`set`** upserts the single schedule: it creates one when none exists (requires
+  `--cron`; `--name` defaults to `default`, `--timezone` to `UTC`, enabled by default) and
+  otherwise updates the existing one (pass any of `--name`, `--cron`, `--timezone`,
+  `--enabled`/`--disabled`). `add`/`create` create-only (error if one already exists) and
+  `update` update-only (error if none) are available when you want the stricter form.
+- `--cron` (alias `--schedule`) is a five-field cron expression; `--timezone` is an IANA
+  zone. `pause`/`resume` just toggle `enabled`. `run-now` (alias `run`) fires synchronously
+  and prints the run detail like `agent run`. `delete` (alias `rm`) prompts unless `--yes`.
 
 ## Deploy An App With The CLI
 
