@@ -1,43 +1,45 @@
 ---
 name: create-railcode-app
-description: Build, modify, debug, and deploy Railcode static apps end-to-end. Use when creating a Railcode app from an idea, using the Railcode CLI, wiring the zero-config SDK globals, explaining Railcode auth/data "magic", testing with railcode dev, understanding app access, or deploying apps to a Railcode server.
-version: 0.1.17
+description: Build, modify, debug, and deploy Railcode static apps and managed agents end-to-end. Use when creating a Railcode app or managed agent from an idea, using the Railcode CLI, managing/scheduling/running Railcode agents (railcode agent ...), wiring the zero-config SDK globals, explaining Railcode auth/data "magic", testing with railcode dev, understanding app access, or deploying apps to a Railcode server.
+version: 0.1.18
 ---
 
 # Create Railcode App
 
-## Version Check (run first)
+## Step 0 — Update the skill and the CLI first (ALWAYS, before anything else)
 
-Find the latest published CLI and compare it to what you have:
-
-```bash
-npm view railcode version      # latest published (source of truth)
-railcode --version             # what's installed
-```
-
-If they differ, upgrade the CLI: `npm install -g railcode@latest` (or
-`pnpm add -g railcode@latest`). It's a regular npm package, not a self-updating binary.
-
-This skill was last written against **CLI 0.1.20** (the multi-tenant Railcode platform).
-That number is provenance, not a target to match — npm is the source of truth for "latest."
-If the latest published CLI is newer, the skill itself may lag, so update it too:
+Before you scope an app, scaffold, run any `railcode` command, deploy, or even answer a
+Railcode/CLI question — **update both this skill and the CLI to latest.** Don't
+check-then-maybe-upgrade; just try to update both, every time this skill runs:
 
 ```bash
-npx skills update create-railcode-app
+npx skills add Railcode-HQ/railcode-skills     # install/update ALL Railcode skills to latest
+npm install -g railcode@latest                 # upgrade the CLI (or: pnpm add -g railcode@latest)
+railcode --version                             # confirm what you now have
+npm view railcode version                      # latest published (source of truth) — should match
 ```
 
-If a `railcode` command or flag documented here is missing or errors unexpectedly, suspect
-version drift first and re-check this.
+Then honor what you find:
 
-## Installing & Updating This Skill
+- **If the skill updated itself**, its instructions may have just changed under you. The copy
+  in your context is now stale — **re-read this `SKILL.md` from the top** before acting on it.
+- **If `railcode --version` still trails `npm view railcode version`** after the upgrade, the
+  global install is shadowed (wrong package manager or PATH). Resolve that before continuing —
+  the CLI is a regular npm package, not a self-updating binary, so it only moves when upgraded.
+- **If npm or the network is unreachable**, you can't confirm you're current — say so plainly
+  in your handoff and proceed with the installed version rather than blocking, but don't claim
+  the skill or CLI reflects the latest.
 
-This skill ships through the open agent-skills ecosystem (the `skills` CLI), so the same
-commands work across Claude Code, Codex, Cursor, and other agents:
+This skill was last written against **CLI 0.1.20** (the multi-tenant Railcode platform). That
+number is provenance, not a target to match — npm is the source of truth for "latest." If a
+`railcode` command or flag documented here is missing or errors unexpectedly, suspect version
+drift first and re-run the updates above.
 
-```bash
-npx skills add Railcode-HQ/railcode-skills --skill create-railcode-app   # install
-npx skills update create-railcode-app                                    # update
-```
+That same `skills add Railcode-HQ/railcode-skills` command is also the first-time install —
+`add` upserts, so it installs what's missing and refreshes what's already there. Targeting the
+whole `Railcode-HQ/railcode-skills` repo (rather than a single `--skill`) keeps every Railcode
+skill current in one shot, and it works across Claude Code, Codex, Cursor, and other agents on
+the open agent-skills ecosystem.
 
 ## Build Process (follow in order)
 
