@@ -49,7 +49,7 @@ declare const db: {
     prefix(value: string): /* Query */ any;
   };
 };
-// likewise: files, llm, llmProviders, data, postgres, bigquery, snowflake, dataConnectors,
+// likewise: files, llm, llmProviders, data, postgres, bigquery, turso, dataConnectors,
 // connector, serviceConnectors, designSystem, email
 ```
 
@@ -139,13 +139,20 @@ inside the stored value (`assignee.email`). Comparisons are typed by the operand
 await files.upload(file.name, file, file.type || "application/octet-stream");
 const entries = await files.list();
 const url = files.url(file.name);        // use directly in <img src> / fetch
+const batch = await files.urls(entries.map((entry) => entry.name));
+// batch.items: [{ name, url, expires_in }]; batch.missing: string[]
 await files.delete(file.name);
 ```
 
-The file API is the global `files`. Keep file names flat — no `/` folders. For
-user-supplied names, generate a stable id for the file name and keep the display name in KV.
+The file API is the global `files`. Names may contain `/` for nested paths. For a gallery or
+file-heavy view, prefer `files.urls(names)` over many `files.url(name)` redirects: it resolves
+up to 100 existing files in one authenticated request and caches returned URLs in memory until
+shortly before expiry. Missing names are reported separately. For user-supplied names, generate
+a stable id for the storage name and keep the display name in KV. The current `railcode dev`
+emulator does not implement batching, so use `files.url(name)` during local development and
+verify `files.urls(names)` after deployment.
 
-## Saved Query Pattern (Postgres / BigQuery / Snowflake)
+## Saved Query Pattern (Postgres / BigQuery / Turso)
 
 Use saved queries for database access unless the user explicitly tells you to use direct or
 ad-hoc SQL. Do not fall back to direct SQL just because `savedQueries()` does not list a
@@ -164,7 +171,7 @@ const mine = await query("my_orders", { region });   // rows already scoped to t
 
 ## Direct SQL Pattern (Explicit User Request Only)
 
-Only use `data('name').runSQL()` or the dialect-pinned `postgres`/`bigquery`/`snowflake`
+Only use `data('name').runSQL()` or the dialect-pinned `postgres`/`bigquery`/`turso`
 namespaces when the user explicitly asks for direct/ad-hoc SQL. If you use direct SQL, use
 placeholders plus params; never concatenate user-selected filters into a SQL string.
 
@@ -178,12 +185,12 @@ const rows = await postgres("analytics").runSQL(
 const bq = await data("warehouse").runSQL("select id, name from `ds.customers` limit 100");
 ```
 
-Supported engines are **postgres**, **bigquery**, and **snowflake**. Use `data('name')` to
+Supported engines are **postgres**, **bigquery**, and **turso**. Use `data('name')` to
 run against any connection (dispatched by stored kind), or the dialect-pinned
-`postgres`/`bigquery`/`snowflake` when you want the SQL flavor fixed at the call site (a
+`postgres`/`bigquery`/`turso` when you want the SQL flavor fixed at the call site (a
 mismatch is a 404). Any namespace's `.runSQL(...)` with no name uses the connection named
 `default`. Queries are forwarded verbatim (never translated): Postgres uses `$1, $2, …`
-placeholders, BigQuery/Snowflake use `?`. Pass user-selected filters only as params, never
+placeholders, BigQuery/Turso use `?`. Pass user-selected filters only as params, never
 string-concatenated. If the app must work across engines without hardcoding one, read each
 connector's `engine` from `dataConnectors()` and pick the matching namespace (or just use
 `data`). Show a useful empty state when `dataConnectors()` is empty or a connection isn't

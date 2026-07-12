@@ -62,6 +62,7 @@ await db.collection("notes").get("n1");
 
 await files.upload("logo.png", blob, "image/png");
 const url = files.url("logo.png");
+const resolved = await files.urls(["logo.png", "avatars/alice.png"]);
 
 const rows = await postgres("analytics").runSQL("select * from orders where id = $1", [id]);
 const bq   = await bigquery("warehouse").runSQL("select id from `ds.orders` where id = @p", []);
@@ -78,19 +79,19 @@ const out  = await llm.generate("Summarize this record.", { metadata: { feature:
 ```
 
 The globals are exactly: `me`, `appUsers`, `designSystem`, `db`, `files`, `data`, `postgres`,
-`bigquery`, `snowflake`, `dataConnectors`, `query`, `savedQueries`, `connector`,
-`serviceConnectors`, `llm`, `llmProviders`, `email`. Notes:
+`bigquery`, `turso`, `dataConnectors`, `query`, `savedQueries`, `connector`,
+`serviceConnectors`, `llm`, `llmProviders`, `email`, `agents`. Notes:
 
 - `me()` returns nested objects. Use **`me().user.uuid`** as the stable per-user key for
   ownership/permissions/KV prefixes; `me().user.name`/`.email` are for display.
 - SQL runs through the database namespaces: `data(name)` is engine-generic (dispatches on the
-  connection's stored kind server-side); `postgres(name)` / `bigquery(name)` / `snowflake(name)`
+  connection's stored kind server-side); `postgres(name)` / `bigquery(name)` / `turso(name)`
   are dialect-pinned and only reach connections of that engine. `dataConnectors()` lists the
   configured connections as `{ engine, name }`, where engine is `postgres`, `bigquery`, or
-  `snowflake`.
+  `turso`.
 
 The SDK also ships a hidden live inspector drawer that logs every call (`db`, `files`, `llm`,
-`email`, `data`/`postgres`/`bigquery`/`snowflake`, `connector`, `me()`, `appUsers()`, `designSystem()`) with a pending → ok/error
+`email`, `data`/`postgres`/`bigquery`/`turso`, `connector`, `me()`, `appUsers()`, `designSystem()`) with a pending → ok/error
 transition and timing. It has no on-screen affordance — toggle it with ``Ctrl+` `` (control +
 backtick). It is present in production too, just dormant until opened. Do not swallow SDK
 errors; surface useful error states in the app.
@@ -175,15 +176,20 @@ Files are per-app objects:
 await files.upload("logo.png", blob, "image/png");   // upload(name, data, contentType?)
 const url = files.url("logo.png");                    // GET URL (use in <img src>, fetch)
 const entries = await files.list();                   // [{ name, content_type, size, updated_at }]
+const resolved = await files.urls(["logo.png", "docs/report.pdf"]);
+// { items: [{ name, url, expires_in }], missing: [] }
 await files.delete("logo.png");
 ```
 
 `data` may be a `Blob`, `ArrayBuffer`, or typed array; the content type is inferred from a
 `Blob` when omitted. File names cannot start with `/`, contain `\`, or use `.`/`..` traversal
-segments. Don't model folders in the name — keep names flat and store logical hierarchy in
-KV. Served bytes are returned `Content-Disposition: attachment` + `nosniff`.
+segments; `/` is supported for nested paths. Use `files.urls(names)` for galleries and other
+file-heavy views: it resolves up to 100 existing files with one authenticated request, reports
+missing names, and caches resolved URLs in memory until shortly before expiry. Served bytes are
+returned `Content-Disposition: attachment` + `nosniff`. The current `railcode dev` file
+emulator does not implement the batch endpoint; use `files.url(name)` locally.
 
-## SQL (Postgres / BigQuery / Snowflake)
+## SQL (Postgres / BigQuery / Turso)
 
 Use saved queries for database access unless the user explicitly tells you to use direct or
 ad-hoc SQL. The direct SQL APIs below exist for explicitly requested ad-hoc SQL only; normal
@@ -204,20 +210,20 @@ Rules:
 
 - `data('name').runSQL(sql, params)` runs against a connection of **any** kind — the backend
   dispatches on the connection's stored engine. The dialect-pinned `postgres('name')` /
-  `bigquery('name')` / `snowflake('name')` only reach connections of that engine (a mismatch
+  `bigquery('name')` / `turso('name')` only reach connections of that engine (a mismatch
   is a 404). Either form takes `.runSQL(sql, params)`, or `.runSQL(...)` with no name for the
   connection named `default`.
-- **postgres**, **bigquery**, and **snowflake** are supported; the backend rejects other
+- **postgres**, **bigquery**, and **turso** are supported; the backend rejects other
   engines. The query is forwarded verbatim and never translated, so write in the target
-  engine's SQL dialect (Postgres uses `$1` placeholders; BigQuery/Snowflake use `?`).
+  engine's SQL dialect (Postgres uses `$1` placeholders; BigQuery/Turso use `?`).
 - Treat SQL as **read-only**. Always use placeholders + a params array; never concatenate user
   input.
 - Call `dataConnectors()` to discover configured connections as `{ engine, name }`. Expect it
   to be empty in unauthenticated local dev (and show a clean empty state).
 - The server caps result rows (the envelope's `truncated` flag tells you when it did).
-- On Postgres the platform opens every session **read-only**, so writes fail regardless of
-  the credential. BigQuery and Snowflake have no session-level read-only mode — there the
-  connection credential's privileges are the boundary. Treat all app SQL as read-only.
+- On Postgres and Turso the platform opens sessions **read-only**, so writes fail regardless of
+  the credential. BigQuery has no session-level read-only mode; its connection credential's
+  privileges are the boundary. Treat all app SQL as read-only.
 - Do not use these direct SQL APIs unless the user explicitly requested direct/ad-hoc SQL.
 
 ## Saved Queries
@@ -348,7 +354,7 @@ const res = await email.send({
 - Identity (`me`), `appUsers`, KV, and files are **emulated on local disk** under
   `~/.railcode/dev/<instance>/<app>/`. The KV query engine is a port of the backend, so
   `where`/`prefix`/`orderBy`/`page`/`first`/`count` behave exactly as in production.
-- `designSystem()`, `data()/postgres()/bigquery()/snowflake().runSQL()`, `dataConnectors()`,
+- `designSystem()`, `data()/postgres()/bigquery()/turso().runSQL()`, `dataConnectors()`,
   `query()`/`savedQueries()`, `serviceConnectors()`, `connector().fetch()`, `llm`,
   `llmProviders()`, and `email.send()` **forward to the real instance** when the CLI has a
   saved token — real provider, quota, databases, connectors, and **mail delivery** (real

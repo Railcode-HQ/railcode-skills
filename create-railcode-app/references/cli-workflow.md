@@ -166,7 +166,7 @@ railcode db query --file report.sql --connection analytics
 ```
 
 `railcode db` inspects the org's **data connectors** (admin-configured Postgres, BigQuery, or
-Snowflake) and runs ad-hoc read-only SQL from the terminal — the same connectors and SQL the
+Turso) and runs ad-hoc read-only SQL from the terminal — the same connectors and SQL the
 in-app `dataConnectors()` / `data().runSQL()` use. Data connectors are **org-scoped**, so these
 one-shot commands **work straight after `railcode login`** — **no app and no `railcode.json`
 required**. They hit the app-less org data plane (`/api/organizations/{org}/data/*`) with your
@@ -176,16 +176,15 @@ a deployed app.)
 - `railcode db list` (aliases `ls`, `connections`) — prints each connector's `name` +
   `engine`; `--json` prints the raw array.
 - `railcode db query "<sql>"` (alias `sql`) — runs the SQL and prints a table + row count.
-  `--connection <name>` (default `default`), `--engine <postgres|bigquery|snowflake>` (inferred
+  `--connection <name>` (default `default`), `--engine <postgres|bigquery|turso>` (inferred
   from the connector list when omitted), `--params '<json-array>'` binds positional
-  placeholders (`$1, $2, …` on Postgres; `?` on BigQuery/Snowflake), `--file <path>` reads SQL
+  placeholders (`$1, $2, …` on Postgres; `?` on BigQuery/Turso), `--file <path>` reads SQL
   from a file (mutually exclusive with the positional arg), `--json` prints the raw
   `{ columns, rows, rowcount, truncated }` envelope.
 
 Treat SQL as read-only — always use placeholders + `--params`, never string interpolation.
-(On Postgres the platform enforces this: every session is opened read-only. BigQuery and
-Snowflake have no session-level read-only mode, so there the connection credential's
-privileges are the boundary.)
+(On Postgres and Turso the platform enforces this with read-only sessions. BigQuery has no
+session-level read-only mode, so its connection credential's privileges are the boundary.)
 
 Note the two different `--params` shapes: `railcode db query` takes a positional **array**
 (`'[100]'` binds `$1`); `railcode query run` takes a named **object** (see below).

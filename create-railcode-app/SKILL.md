@@ -1,7 +1,7 @@
 ---
 name: create-railcode-app
 description: Build, modify, debug, and deploy Railcode static apps and managed agents end-to-end. Use when creating a Railcode app or managed agent from an idea, using the Railcode CLI, managing/scheduling/running Railcode agents (railcode agent ...), wiring the zero-config SDK globals, explaining Railcode auth/data "magic", testing with railcode dev, understanding app access, or deploying apps to a Railcode server.
-version: 0.1.18
+version: 0.1.19
 ---
 
 # Create Railcode App
@@ -30,8 +30,10 @@ Then honor what you find:
   in your handoff and proceed with the installed version rather than blocking, but don't claim
   the skill or CLI reflects the latest.
 
-This skill was last written against **CLI 0.1.20** (the multi-tenant Railcode platform). That
-number is provenance, not a target to match — npm is the source of truth for "latest." If a
+This skill was last written against **CLI source 0.1.21** (npm currently publishes 0.1.20;
+the multi-tenant Railcode platform). That
+number is provenance, not a target to match — npm is the source of truth for the latest
+published CLI, while the source tree defines upcoming behavior. If a
 `railcode` command or flag documented here is missing or errors unexpectedly, suspect version
 drift first and re-run the updates above.
 
@@ -55,10 +57,10 @@ least:
 - **What & who** — what should the app do, and who uses it? (drives access policy and
   whether data is per-user or shared)
 - **Data** — what does it store or read? Per-user records or shared across the app's users?
-  Any external database (Postgres/BigQuery/Snowflake) must be accessed through an
+  Any external database (Postgres/BigQuery/Turso) must be accessed through an
   admin-published **saved query** invoked with `query('name', params)` unless the user
   explicitly tells you to use direct/ad-hoc SQL. If the user asks for direct SQL, use
-  `data('name').runSQL()` or a dialect-pinned `postgres`/`bigquery`/`snowflake` namespace
+  `data('name').runSQL()` or a dialect-pinned `postgres`/`bigquery`/`turso` namespace
   with bound params. Any third-party SaaS API to reach via a `connector('name').fetch()`
   service connector? Any `llm` use?
 - **Design** — *"Should I use the default Railcode design system, or do you have a specific
@@ -153,7 +155,12 @@ directly (in TypeScript, `declare` them or add an ambient `.d.ts`). The global S
   `query()` for pure ordering/paging, or with the collection helpers `where(...)` /
   `prefix(...)`; query-only methods include `updatedSince`/`updatedBefore`/`orderBy`/
   `page`/`first`/`count`.
-- `files` → `upload(name, data, contentType?)`, `url(name)`, `list()`, `delete(name)`.
+- `files` → `upload(name, data, contentType?)`, synchronous single-file `url(name)`,
+  batched async `urls(names)`, `list()`, and `delete(name)`. Use `await files.urls(names)`
+  for file-heavy views: it resolves up to 100 existing files with one authenticated request,
+  returns `{ items: [{ name, url, expires_in }], missing }`, and caches resolved URLs in
+  memory until shortly before expiry. The current `railcode dev` file emulator does not yet
+  implement the batch endpoint; use `files.url(name)` locally and batch after deployment.
 - `llm` → `llm.generate(input, opts)` and the streaming `llm.stream(input, opts)`;
   `llmProviders()` lists the org's configured providers as
   `{ provider, default, models: [{ model, default }] }`. Calls route by `(provider, model)`:
@@ -162,10 +169,10 @@ directly (in TypeScript, `declare` them or add an ambient `.d.ts`). The global S
   API keys. (Multi-model discovery new in CLI/SDK 0.1.15.)
 - `data('name').runSQL(query, params)` runs SQL against a connection of any kind
   (dispatched on its stored engine server-side); the dialect-pinned `postgres('name')` /
-  `bigquery('name')` / `snowflake('name')` only reach connections of that engine. Each takes
+  `bigquery('name')` / `turso('name')` only reach connections of that engine. Each takes
   `.runSQL(query, params)`, or `.runSQL(...)` alone for the connection named `default`.
   `dataConnectors()` lists configured connections as `{ engine, name }` (engine is one of
-  `postgres`, `bigquery`, `snowflake`). Do not use direct/ad-hoc SQL unless the user
+  `postgres`, `bigquery`, `turso`). Do not use direct/ad-hoc SQL unless the user
   explicitly asks for it; saved queries are the default for database access.
 - `query(name, params?)` → invoke an admin-published **saved query** by name (returns the
   same rows shape as `runSQL`); `savedQueries()` lists the callable signatures
@@ -183,6 +190,7 @@ directly (in TypeScript, `declare` them or add an ambient `.d.ts`). The global S
   Governed and **off by default**: the org must grant `email` (or a `run_as: app`
   manifest declares `email: true`). Per-org daily recipient cap; self-hosted or an
   unconfigured provider returns `503`. (New in CLI/SDK 0.1.19.)
+- `agents.invoke(name, input?)` → invoke a managed agent available to the deployed app.
 
 The SDK also ships a hidden live activity drawer that logs every call; toggle it with
 ``Ctrl+` `` (control + backtick) while developing. It is present in production too, just
@@ -205,8 +213,10 @@ Model data intentionally:
   `orderBy`, `updatedSince`, `updatedBefore`, `page`, `first`, and `count` are query methods,
   not direct collection methods. `where()` operators are the string names `eq`, `ne`, `gt`,
   `gte`, `lt`, `lte`, and `in` (e.g. `.where("done", "eq", false)`), not symbols.
-- Files are scoped per app. File API names cannot contain `/`; encode hierarchy in metadata or key names instead.
-- SQL connections (Postgres/BigQuery/Snowflake) are admin-configured server-side and read-only. Always use placeholders plus params.
+- Files are scoped per app. Names may contain `/` for nested paths, but cannot start with
+  `/`, contain `\`, or use `.`/`..` traversal segments. Prefer `files.urls(names)` when a
+  view needs many files.
+- SQL connections (Postgres/BigQuery/Turso) are admin-configured server-side and read-only. Always use placeholders plus params.
 - LLM provider/model/API key are admin-configured server-side. Send `metadata` for audit and attribution.
 - Email goes through the platform gateway server-side (fixed sender, appended disclaimer; apps never handle keys). It is **off by default** — needs an `email` grant or a ratified `email: true` manifest — and rate-limited per org; render `403`/`429`/`503` as normal app states, not retries.
 
@@ -214,7 +224,11 @@ Model data intentionally:
 
 Run `railcode dev` from the app directory (any directory with a `railcode.json`). It serves the app at the first available local port starting at `http://127.0.0.1:7331`, runs the app's own dev server (Vite) and reverse-proxies it (HMR included) when there's a `package.json` `dev` script, serves the SDK at `/_api/sdk.js`, and stores local KV/files under `~/.railcode/dev/<instance>/<app>/` (namespaced per instance+org). Use the printed URL; it may be `7332` or higher when another dev server is already running. Useful flags: `--port <n>` (starting proxy port), `--asset-port <n>` (starting Vite port), `--reset` (wipe this app's local KV/files first).
 
-Local dev emulates identity (`me`), app users, KV, and files entirely on local disk. The design system, SQL (`data`/`postgres`/`bigquery`/`snowflake`), data connectors, saved queries (`query`/`savedQueries`), service connectors, LLM, and email (`email.send`) are **forwarded to the configured Railcode instance** when the CLI has a saved API token — so those use the org's real provider, quota, databases, and mail delivery (real spend, real data, real email). Not logged in: `dataConnectors()`/`serviceConnectors()`/`savedQueries()` return empty and `data().runSQL()`/`query()`/`llm`/`email.send()` return `503`. The startup banner prints which mode you're in. Even in local development, prefer `query()`/`savedQueries()` and do not use direct SQL unless explicitly instructed. Email forwarding under `railcode dev` is new in CLI 0.1.19 — earlier CLIs 404 on `email.send()` locally.
+Local dev emulates identity (`me`), app users, KV, and files entirely on local disk. The design system, SQL (`data`/`postgres`/`bigquery`/`turso`), data connectors, saved queries (`query`/`savedQueries`), service connectors, LLM, and email (`email.send`) are **forwarded to the configured Railcode instance** when the CLI has a saved API token — so those use the org's real provider, quota, databases, and mail delivery (real spend, real data, real email). Not logged in: `dataConnectors()`/`serviceConnectors()`/`savedQueries()` return empty and `data().runSQL()`/`query()`/`llm`/`email.send()` return `503`. The startup banner prints which mode you're in. Even in local development, prefer `query()`/`savedQueries()` and do not use direct SQL unless explicitly instructed. Email forwarding under `railcode dev` is new in CLI 0.1.19 — earlier CLIs 404 on `email.send()` locally.
+
+The current dev file emulator supports `files.upload` / `url` / `list` / `delete`, but not
+the new batch `files.urls()` endpoint. Exercise batching against a deployed app until the CLI
+emulator catches up.
 
 ## Validation
 
