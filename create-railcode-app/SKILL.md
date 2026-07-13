@@ -1,7 +1,7 @@
 ---
 name: create-railcode-app
 description: Build, modify, debug, and deploy Railcode static apps and managed agents end-to-end. Use when creating a Railcode app or managed agent from an idea, using the Railcode CLI, managing/scheduling/running Railcode agents (railcode agent ...), wiring the zero-config SDK globals, explaining Railcode auth/data "magic", testing with railcode dev, understanding app access, or deploying apps to a Railcode server.
-version: 0.1.22
+version: 0.1.23
 ---
 
 # Create Railcode App
@@ -30,15 +30,17 @@ Then honor what you find:
   in your handoff and proceed with the installed version rather than blocking, but don't claim
   the skill or CLI reflects the latest.
 
-This skill was last written against **CLI source 0.1.22** (npm publishes 0.1.21, with
-0.1.22 being published; document against the source behavior — the multi-tenant Railcode
-platform). The newest additions documented here are the per-scope storage namespaces
-(`db.user`/`db.role(uuid)`, `files.user`/`files.role(uuid)`), `roles()` returning an
-`is_member` flag per role, and `users/`/`roles/` reserved as file-name prefixes. That
-number is provenance, not a target to match — npm is the source of truth for the latest
-published CLI, while the source tree defines upcoming behavior. If a
-`railcode` command or flag documented here is missing or errors unexpectedly, suspect version
-drift first and re-run the updates above.
+This skill was last written against **CLI source 0.1.22** (npm publishes 0.1.22; document
+against the source behavior — the multi-tenant Railcode platform). The newest additions
+documented here are the **org admin console CLI commands** (`railcode apps`/`members`/`roles`/
+`connections`/`analytics`/`logs` plus the `connector` admin subcommands `native`/`enable`/
+`create`/`delete`) — added within the 0.1.22 source without a version bump, so a matching
+`railcode --version` doesn't guarantee they're present; see
+[cli-workflow.md → Org Admin Console](references/cli-workflow.md). App-building rarely needs
+them. That number is provenance, not a target to match — npm is the source of truth for the
+latest published CLI, while the source tree defines upcoming behavior. If a `railcode` command
+or flag documented here is missing or errors unexpectedly, suspect version drift first and
+re-run the updates above.
 
 That same `skills add Railcode-HQ/railcode-skills` command is also the first-time install —
 `add` upserts, so it installs what's missing and refreshes what's already there. Targeting the

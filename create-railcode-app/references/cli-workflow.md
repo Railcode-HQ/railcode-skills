@@ -7,20 +7,32 @@ The CLI ships as the npm package **`railcode`**. Its full command set is:
 
 ```
 railcode login [--api-url <url>]              Sign in (browser) and mint a personal API token
+railcode login --setup-token <token>          Non-interactive onboarding login (one-time setup token)
 railcode init <app> [--template static|react] Scaffold a new app directory
 railcode dev [--port <n>] [--asset-port <n>] [--reset]   Run the app locally against an emulated /_api
 railcode deploy [--private]                   Build (if configured) and deploy the app here
 railcode design-system                        Print your org's design-system guidance (markdown)
 railcode db <list|query> ...                  List data connectors / run ad-hoc SQL
 railcode query <list|run|create|update|delete> ...   Saved queries: invoke by name / author (admin)
-railcode connector <list|docs|fetch> ...      List service connectors / read API docs / proxy one HTTP call
+railcode connector <list|docs|fetch|native|enable|create|delete> ...   Call service connectors / manage them (admin)
 railcode llm <providers|models>               List the LLM providers/models apps can call
 railcode manifest <validate|show> ...         Validate manifest.yaml / show an app's ratified authority manifest
 railcode agent <list|show|pull|create|update|delete|test|run> ...   Manage org-scoped managed agents
 railcode agent schedule <show|set|add|update|pause|resume|delete|run-now> <agent>   The agent's one cron schedule
+railcode apps <list|show|access|set-access|transfer|delete> ...   Apps + access policy (owner/admin)
+railcode members <list|set-role|remove|add> ...   Org members + system roles (list: any member; mutations: admin)
+railcode roles <list|create|update|delete|add-member|remove-member|grants|grant|revoke|materialize|effective|catalog> ...   Org roles + granular grants (admin)
+railcode connections <list|create|delete> ... Manage org data connectors (admin)
+railcode analytics <app> [--range 7d|30d|90d]  Per-app pageview analytics (owner/admin)
+railcode logs <connector|service-connector|llm|email|agent> [filters]   Org observability logs (admin)
 railcode --version
 railcode --help
 ```
+
+The `apps`, `members`, `roles`, `connections`, `analytics`, `logs`, and the `connector`
+admin subcommands (`native`/`enable`/`create`/`delete`) mirror the web console's owner/admin
+surfaces — see [Org Admin Console](#org-admin-console-cli). App-building rarely needs them;
+they're documented so the command set above is complete.
 
 Upgrade the CLI through your package manager (`npm install -g railcode@latest`) — it's a
 regular npm package, not a self-updating binary.
@@ -63,6 +75,11 @@ Login is **browser-based** (not an email/password prompt). The CLI:
 Browser login needs a TTY. In non-interactive environments set `RAILCODE_API_TOKEN`
 instead. If you have no organization yet, finish onboarding in the dashboard, then run
 `railcode login` again so the org is saved (deploy needs it).
+
+`railcode login --setup-token <rc_setup_...>` is the no-TTY, no-browser onboarding path: a
+**one-time, ~10-minute** setup token (minted by the dashboard's copied CLI prompt) is
+exchanged once for a personal API token and writes the same `config.json`. If it's expired
+or already used, generate a fresh prompt from the dashboard.
 
 ## Create An App
 
@@ -397,9 +414,15 @@ The `railcode.json` schema is `{ app, build?, dist?, dev?: { root?, command?, po
 ## App Access
 
 A new app defaults to **`organization`** access — every member of your org may open it.
-Access is otherwise managed in the **admin UI**, or via the access API. The owner or an org
-admin changes it:
+Access is otherwise managed in the **admin UI**, the `railcode apps` CLI commands (see
+[Org Admin Console](#org-admin-console-cli)), or the access API. The owner or an org admin
+changes it:
 
+```bash
+railcode apps access <app>                          # show the current mode + per-user grants
+railcode apps set-access <app> --mode private       # or: organization | restricted
+railcode apps set-access <app> --mode restricted --members alice@x.io,bob@x.io
+```
 ```text
 GET  /api/organizations/{org}/apps/{app}/access
 PUT  /api/organizations/{org}/apps/{app}/access      { "mode": "...", ... }
@@ -464,3 +487,58 @@ railcode manifest show <app>        # the app's ratified doc + any pending diff 
   current doc, its content hash, and any pending additions.
 - `adhoc_sql` grants raw SQL authority and is intentionally scarce. Do not add it unless the
   user explicitly requested direct/ad-hoc SQL; otherwise use `saved_queries`.
+
+## Org Admin Console (CLI)
+
+The CLI mirrors the web dashboard's owner/admin console, so an operator can do everything
+from the terminal. These are **org-scoped** (they target your saved org and work straight
+after `railcode login`, no app or `railcode.json`) and **gated server-side by the same
+capabilities as the console** — a plain member gets a `403` (`apps list`/`show`/`access`
+follow the per-app access policy, and `members list` is readable by any member). App-building
+rarely needs these; they're documented so the command set is complete. Most refs accept a
+**name/slug/email or UUID**; pass `--json` for raw output. Run `railcode <command> --help`
+for the full flag set.
+
+```bash
+railcode apps list                                  # slug, name, status, access, your role, manage
+railcode apps show <app>                             # one app's details
+railcode apps set-access <app> --mode private        # organization | private | restricted (+ --members)
+railcode apps transfer <app> --to <email|uuid>       # change ownership
+railcode apps delete <app> [--yes]                   # irreversible; prompts on a TTY, --yes to skip
+
+railcode members list                                # any member; set-role/remove/add are admin
+railcode members add --email <e> --name <n> --password <p> --role admin|member   # self-hosted provisioning
+railcode members set-role <email|uuid> --role admin|member
+railcode members remove <email|uuid>
+
+railcode roles list                                  # admin-defined org roles + member counts
+railcode roles create --name <n> [--description <d>] # also: update/delete/add-member/remove-member
+railcode roles grant --subject <org|role:X|user:X> --resource <type> --ids <a,b>   # additive grants
+railcode roles grants                                # list grant rows; revoke <id>; materialize --subject/--resource
+railcode roles effective <email|uuid>                # a member's computed effective access
+railcode roles catalog                               # grantable resources (apps/connectors/queries/…)
+
+railcode connections list                            # org data connectors (postgres|bigquery|turso)
+railcode connections create --name <n> --kind postgres --config '{...}' --credentials '{...}'   # dials before saving
+railcode connections delete <name|uuid>
+
+railcode connector list [--admin]                    # --admin: base_url, credential + enabled state, native key
+railcode connector native                            # native presets (stripe/resend/…) + enabled state
+railcode connector enable <key> --credentials '{...}'    # one-click enable/rotate a native preset
+railcode connector create --name <n> --base-url <url> [--auth-type <t>] [--auth-config '{...}']
+railcode connector delete <name|uuid>
+
+railcode analytics <app> [--range 7d|30d|90d]        # per-app pageviews: totals, daily, top paths/users (default 30d)
+
+railcode logs <stream> [filters]                     # streams: connector|service-connector|llm|email|agent
+railcode logs <stream> <request_id>                  # full JSON detail for one entry
+```
+
+- `roles` manage the **granular grants substrate** (`--resource` ∈
+  `app|llm|email|sc_endpoint|connector|saved_query|agent`); this is the same model the app
+  `manifest.yaml` ratifies against. `roles effective`/`apps access` show who can reach what
+  (`apps access` also lists app access conferred via `roles grant --resource app`).
+- `logs` filters are per-stream (`--app`, `--user`, `--connector`, `--agent`, `--source`,
+  `--status`, `--limit 1..500`); unsupported filters are rejected with the valid set.
+- Errors are actionable: unknown refs, bad enum values, and missing flags print the accepted
+  values; destructive `apps delete` needs `--yes` in a non-interactive session.
