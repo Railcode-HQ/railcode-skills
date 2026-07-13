@@ -58,10 +58,11 @@ const people = await appUsers();   // [{ uuid, name, email, is_admin }] — no r
 const orgRoles = await roles();    // [{ uuid, name, description, is_member }] — every custom org role
 const ds    = await designSystem();// the org's design-system guidance (markdown string)
 
-await db.collection("notes").put("n1", { text: "hi", n: 3 });
-await db.collection("notes").get("n1");
+await db.collection("notes").put("n1", { text: "hi", n: 3 });   // app-wide (== db.shared)
+await db.user.collection("notes").get("n1");                    // the caller's private scope
+await db.role(roleUuid).collection("notes").list();            // one org role's scope
 
-await files.upload("logo.png", blob, "image/png");
+await files.upload("logo.png", blob, "image/png");             // shared; files.user / files.role(uuid) too
 const url = files.url("logo.png");
 const resolved = await files.urls(["logo.png", "avatars/alice.png"]);
 
@@ -125,18 +126,23 @@ authoritative for access.
 
 ## KV Store
 
-`db.collection(name)` is a per-app JSON key/value store, shared across that app's allowed
-users. Mutations: `put(key, value)`, `get(key)`, `delete(key)`, `list()`.
+`db.collection(name)` is a per-app JSON key/value store. Mutations: `put(key, value)`,
+`get(key)`, `delete(key)`, `list()`.
 
-Use shared keys for collaboration surfaces, and **user-prefixed keys** for per-user private
-state (prefix by the stable user uuid):
+**Storage scopes.** `db.collection(...)` is app-wide (an alias for `db.shared`, shared across
+the app's allowed users). Use `db.user` for the caller's own private records and
+`db.role(uuid)` for records shared within one org role — each scope is a separate namespace,
+so the same `(collection, key)` never collides:
 
 ```js
-await db.collection("messages").put(messageId, message);            // shared
-
-const who = await me();
-await db.collection("drafts").put(`${who.user.uuid}:${draftId}`, draft);  // per-user
+await db.collection("messages").put(messageId, message);        // shared (app-wide)
+await db.user.collection("drafts").put(draftId, draft);         // the caller's private data
+await db.role(roleUuid).collection("reports").put(id, report);  // one org role's data
 ```
+
+`db.role(uuid)` requires the caller to be a live member of that role (owner/admin may reach
+any); discover role UUIDs with `roles()`. The server enforces scope access — the namespaces
+are not a client-side convenience.
 
 For anything that can grow past a small list, use the query builder instead of `list()`:
 
@@ -189,12 +195,16 @@ await files.delete("logo.png");
 ```
 
 `data` may be a `Blob`, `ArrayBuffer`, or typed array; the content type is inferred from a
-`Blob` when omitted. File names cannot start with `/`, contain `\`, or use `.`/`..` traversal
-segments; `/` is supported for nested paths. Use `files.urls(names)` for galleries and other
-file-heavy views: it resolves up to 100 existing files with one authenticated request, reports
-missing names, and caches resolved URLs in memory until shortly before expiry. Served bytes are
-returned `Content-Disposition: attachment` + `nosniff`. The current `railcode dev` file
-emulator does not implement the batch endpoint; use `files.url(name)` locally.
+`Blob` when omitted. File names cannot start with `/`, contain `\`, use `.`/`..` traversal
+segments, or begin with a `users/` or `roles/` segment (reserved — such a name is rejected
+400); `/` is otherwise supported for nested paths. Use `files.urls(names)` for galleries and
+other file-heavy views: it resolves up to 100 existing files with one authenticated request,
+reports missing names, and caches resolved URLs in memory until shortly before expiry. Served
+bytes are returned `Content-Disposition: attachment` + `nosniff`.
+
+Files carry the **same scopes** as KV — `files.shared` (== bare `files.*`), `files.user`, and
+`files.role(uuid)` — so the same file name never collides across scopes. `railcode dev`
+emulates every scope (and `urls`) on local disk.
 
 ## SQL (Postgres / BigQuery / Turso)
 

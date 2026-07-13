@@ -1,7 +1,7 @@
 ---
 name: create-railcode-app
 description: Build, modify, debug, and deploy Railcode static apps and managed agents end-to-end. Use when creating a Railcode app or managed agent from an idea, using the Railcode CLI, managing/scheduling/running Railcode agents (railcode agent ...), wiring the zero-config SDK globals, explaining Railcode auth/data "magic", testing with railcode dev, understanding app access, or deploying apps to a Railcode server.
-version: 0.1.21
+version: 0.1.22
 ---
 
 # Create Railcode App
@@ -30,10 +30,11 @@ Then honor what you find:
   in your handoff and proceed with the installed version rather than blocking, but don't claim
   the skill or CLI reflects the latest.
 
-This skill was last written against **CLI source 0.1.21** (npm now publishes 0.1.21;
-the multi-tenant Railcode platform). The newest runtime addition documented here is
-`roles()` returning an `is_member` flag per role, plus `users/`/`roles/` becoming reserved
-file-name prefixes. That
+This skill was last written against **CLI source 0.1.22** (npm publishes 0.1.21, with
+0.1.22 being published; document against the source behavior — the multi-tenant Railcode
+platform). The newest additions documented here are the per-scope storage namespaces
+(`db.user`/`db.role(uuid)`, `files.user`/`files.role(uuid)`), `roles()` returning an
+`is_member` flag per role, and `users/`/`roles/` reserved as file-name prefixes. That
 number is provenance, not a target to match — npm is the source of truth for the latest
 published CLI, while the source tree defines upcoming behavior. If a
 `railcode` command or flag documented here is missing or errors unexpectedly, suspect version
@@ -159,13 +160,19 @@ directly (in TypeScript, `declare` them or add an ambient `.d.ts`). The global S
 - `db.collection(name)` → per-app KV (`get`/`put`/`delete`/`list`). Start a query with
   `query()` for pure ordering/paging, or with the collection helpers `where(...)` /
   `prefix(...)`; query-only methods include `updatedSince`/`updatedBefore`/`orderBy`/
-  `page`/`first`/`count`.
+  `page`/`first`/`count`. **Storage scopes:** `db.collection(...)` is app-wide (an alias for
+  `db.shared`); `db.user.collection(...)` is the caller's own private namespace;
+  `db.role(uuid).collection(...)` is one org role's shared namespace (the caller must be a
+  live member — owner/admin may reach any; get role UUIDs from `roles()`). The same
+  `(collection, key)` never collides across scopes, and the server enforces access.
 - `files` → `upload(name, data, contentType?)`, synchronous single-file `url(name)`,
   batched async `urls(names)`, `list()`, and `delete(name)`. Use `await files.urls(names)`
   for file-heavy views: it resolves up to 100 existing files with one authenticated request,
   returns `{ items: [{ name, url, expires_in }], missing }`, and caches resolved URLs in
-  memory until shortly before expiry. The current `railcode dev` file emulator does not yet
-  implement the batch endpoint; use `files.url(name)` locally and batch after deployment.
+  memory until shortly before expiry. Files carry the **same scopes** as KV:
+  `files.user.upload(...)`, `files.role(uuid).url(...)`, and `files.shared.*` — bare
+  `files.*` is an alias for `files.shared`. `railcode dev` emulates every scope on local
+  disk (including `urls`).
 - `llm` → `llm.generate(input, opts)` and the streaming `llm.stream(input, opts)`;
   `llmProviders()` lists the org's configured providers as
   `{ provider, default, models: [{ model, default }] }`. Calls route by `(provider, model)`:
@@ -211,7 +218,7 @@ Apps must be responsive. Verify the main workflows work cleanly on desktop and m
 
 Model data intentionally:
 
-- KV is scoped per app and shared by that app's allowed users. Prefix keys with the logged-in user if the app needs per-user records.
+- KV is scoped per app. `db.shared` (the default `db.collection`) is shared by the app's allowed users; use `db.user` for the caller's private records (no manual user-key prefixing needed) and `db.role(uuid)` for data shared within one org role.
 - Use KV query builders for large or ordered lists instead of loading the whole collection.
   `where()` and `prefix()` can start a query from a collection; pure ordering or paging starts
   with `.query()` (for example `.query().orderBy("updatedAt", "desc").page(1, 50)`).
