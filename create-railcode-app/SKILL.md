@@ -1,7 +1,7 @@
 ---
 name: create-railcode-app
 description: Build, modify, debug, and deploy Railcode static apps and managed agents end-to-end. Use when creating a Railcode app or managed agent from an idea, using the Railcode CLI, managing/scheduling/running Railcode agents (railcode agent ...), wiring the zero-config SDK globals, explaining Railcode auth/data "magic", testing with railcode dev, understanding app access, or deploying apps to a Railcode server.
-version: 0.1.19
+version: 0.1.20
 ---
 
 # Create Railcode App
@@ -148,7 +148,9 @@ templates do this). On load it attaches a fixed set of globals to `window` — t
 `loadRailcodeSdk()` bootstrap or `src/lib/railcode.ts` wrapper to import; call the globals
 directly (in TypeScript, `declare` them or add an ambient `.d.ts`). The global SDK surface is:
 
-- `me()` → `{ user, app, org }` (each `{ uuid, ... }`); `appUsers()` → the org's members.
+- `me()` → `{ user, app, org }`; `user` includes org-level `is_admin` plus assigned custom
+  roles as `{ uuid, name }`. `appUsers()` → org members with `is_admin` but no role
+  memberships. `roles()` → every custom org role as `{ uuid, name, description }`.
 - `designSystem()` → the org's design-system guidance (markdown string), same content as
   `railcode design-system`.
 - `db.collection(name)` → per-app KV (`get`/`put`/`delete`/`list`). Start a query with

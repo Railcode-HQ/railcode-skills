@@ -53,8 +53,9 @@ bootstrap and no wrapper module — call the globals directly (in TypeScript, `d
 Every call is same-origin against `/_api/*`, credentialed by the serving cookie:
 
 ```js
-const who   = await me();          // { user:{uuid,name,email}, app:{uuid,slug,name}, org:{uuid,slug,name} }
-const people = await appUsers();   // [{ uuid, name, email, role }] — the app's org members
+const who   = await me();          // user includes is_admin + assigned {uuid,name} custom roles
+const people = await appUsers();   // [{ uuid, name, email, is_admin }] — no role memberships
+const orgRoles = await roles();    // [{ uuid, name, description }] — every custom org role
 const ds    = await designSystem();// the org's design-system guidance (markdown string)
 
 await db.collection("notes").put("n1", { text: "hi", n: 3 });
@@ -78,12 +79,15 @@ const svc  = await serviceConnectors();           // [{ name, description, auth_
 const out  = await llm.generate("Summarize this record.", { metadata: { feature: "summary" } });
 ```
 
-The globals are exactly: `me`, `appUsers`, `designSystem`, `db`, `files`, `data`, `postgres`,
+The globals are exactly: `me`, `appUsers`, `roles`, `designSystem`, `db`, `files`, `data`, `postgres`,
 `bigquery`, `turso`, `dataConnectors`, `query`, `savedQueries`, `connector`,
 `serviceConnectors`, `llm`, `llmProviders`, `email`, `agents`. Notes:
 
 - `me()` returns nested objects. Use **`me().user.uuid`** as the stable per-user key for
   ownership/permissions/KV prefixes; `me().user.name`/`.email` are for display.
+  `me().user.is_admin` is true for org owners and admins, and `me().user.roles` is the
+  caller's assigned custom roles as `{ uuid, name }[]`. These are UI hints only; server-side
+  authorization remains authoritative.
 - SQL runs through the database namespaces: `data(name)` is engine-generic (dispatches on the
   connection's stored kind server-side); `postgres(name)` / `bigquery(name)` / `turso(name)`
   are dialect-pinned and only reach connections of that engine. `dataConnectors()` lists the
@@ -91,7 +95,7 @@ The globals are exactly: `me`, `appUsers`, `designSystem`, `db`, `files`, `data`
   `turso`.
 
 The SDK also ships a hidden live inspector drawer that logs every call (`db`, `files`, `llm`,
-`email`, `data`/`postgres`/`bigquery`/`turso`, `connector`, `me()`, `appUsers()`, `designSystem()`) with a pending → ok/error
+`email`, `data`/`postgres`/`bigquery`/`turso`, `connector`, `me()`, `appUsers()`, `roles()`, `designSystem()`) with a pending → ok/error
 transition and timing. It has no on-screen affordance — toggle it with ``Ctrl+` `` (control +
 backtick). It is present in production too, just dormant until opened. Do not swallow SDK
 errors; surface useful error states in the app.
@@ -112,9 +116,11 @@ Org admins/owners **bypass** per-app access — they see and manage every app in
 Access is read/set in the **admin UI** or via `GET`/`PUT
 /api/organizations/{org}/apps/{app}/access`.
 
-`appUsers()` returns the app's org members (`{ uuid, name, email, role }`); use it for
-assignee pickers, mentions, and display, not as an authorization check (the server already
-enforces access).
+`appUsers()` returns the app's org members (`{ uuid, name, email, is_admin }`) without custom
+role memberships; use it for assignee pickers, mentions, and display, not as an authorization
+check. `roles()` returns every custom org role, including empty roles, as
+`{ uuid, name, description }`; match those UUIDs against `me().user.roles` when building
+role-aware UI. The server remains authoritative for access.
 
 ## KV Store
 
@@ -351,7 +357,8 @@ const res = await email.send({
 `railcode dev` preserves the same SDK calling style locally (see
 [cli-workflow.md](cli-workflow.md) for full behavior):
 
-- Identity (`me`), `appUsers`, KV, and files are **emulated on local disk** under
+- Identity (`me`), `appUsers`, `roles` (an empty custom-role list), KV, and files are
+  **emulated on local disk** under
   `~/.railcode/dev/<instance>/<app>/`. The KV query engine is a port of the backend, so
   `where`/`prefix`/`orderBy`/`page`/`first`/`count` behave exactly as in production.
 - `designSystem()`, `data()/postgres()/bigquery()/turso().runSQL()`, `dataConnectors()`,
