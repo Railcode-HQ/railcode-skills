@@ -1,7 +1,7 @@
 ---
 name: create-railcode-app
 description: Build, modify, debug, and deploy Railcode static apps and managed agents end-to-end. Use when creating a Railcode app or managed agent from an idea, using the Railcode CLI, managing/scheduling/running Railcode agents (railcode agent ...), wiring the zero-config SDK globals, explaining Railcode auth/data "magic", testing with railcode dev, understanding app access, or deploying apps to a Railcode server.
-version: 0.1.20
+version: 0.1.21
 ---
 
 # Create Railcode App
@@ -30,8 +30,10 @@ Then honor what you find:
   in your handoff and proceed with the installed version rather than blocking, but don't claim
   the skill or CLI reflects the latest.
 
-This skill was last written against **CLI source 0.1.21** (npm currently publishes 0.1.20;
-the multi-tenant Railcode platform). That
+This skill was last written against **CLI source 0.1.21** (npm now publishes 0.1.21;
+the multi-tenant Railcode platform). The newest runtime addition documented here is
+`roles()` returning an `is_member` flag per role, plus `users/`/`roles/` becoming reserved
+file-name prefixes. That
 number is provenance, not a target to match — npm is the source of truth for the latest
 published CLI, while the source tree defines upcoming behavior. If a
 `railcode` command or flag documented here is missing or errors unexpectedly, suspect version
@@ -150,7 +152,8 @@ directly (in TypeScript, `declare` them or add an ambient `.d.ts`). The global S
 
 - `me()` → `{ user, app, org }`; `user` includes org-level `is_admin` plus assigned custom
   roles as `{ uuid, name }`. `appUsers()` → org members with `is_admin` but no role
-  memberships. `roles()` → every custom org role as `{ uuid, name, description }`.
+  memberships. `roles()` → every custom org role as `{ uuid, name, description, is_member }`
+  (`is_member` = whether the current caller belongs to that role).
 - `designSystem()` → the org's design-system guidance (markdown string), same content as
   `railcode design-system`.
 - `db.collection(name)` → per-app KV (`get`/`put`/`delete`/`list`). Start a query with
@@ -216,8 +219,9 @@ Model data intentionally:
   not direct collection methods. `where()` operators are the string names `eq`, `ne`, `gt`,
   `gte`, `lt`, `lte`, and `in` (e.g. `.where("done", "eq", false)`), not symbols.
 - Files are scoped per app. Names may contain `/` for nested paths, but cannot start with
-  `/`, contain `\`, or use `.`/`..` traversal segments. Prefer `files.urls(names)` when a
-  view needs many files.
+  `/`, contain `\`, use `.`/`..` traversal segments, or begin with a `users/` or `roles/`
+  segment (both reserved server-side — an upload/read with such a name is rejected 400).
+  Prefer `files.urls(names)` when a view needs many files.
 - SQL connections (Postgres/BigQuery/Turso) are admin-configured server-side and read-only. Always use placeholders plus params.
 - LLM provider/model/API key are admin-configured server-side. Send `metadata` for audit and attribution.
 - Email goes through the platform gateway server-side (fixed sender, appended disclaimer; apps never handle keys). It is **off by default** — needs an `email` grant or a ratified `email: true` manifest — and rate-limited per org; render `403`/`429`/`503` as normal app states, not retries.

@@ -55,7 +55,7 @@ Every call is same-origin against `/_api/*`, credentialed by the serving cookie:
 ```js
 const who   = await me();          // user includes is_admin + assigned {uuid,name} custom roles
 const people = await appUsers();   // [{ uuid, name, email, is_admin }] — no role memberships
-const orgRoles = await roles();    // [{ uuid, name, description }] — every custom org role
+const orgRoles = await roles();    // [{ uuid, name, description, is_member }] — every custom org role
 const ds    = await designSystem();// the org's design-system guidance (markdown string)
 
 await db.collection("notes").put("n1", { text: "hi", n: 3 });
@@ -119,8 +119,9 @@ Access is read/set in the **admin UI** or via `GET`/`PUT
 `appUsers()` returns the app's org members (`{ uuid, name, email, is_admin }`) without custom
 role memberships; use it for assignee pickers, mentions, and display, not as an authorization
 check. `roles()` returns every custom org role, including empty roles, as
-`{ uuid, name, description }`; match those UUIDs against `me().user.roles` when building
-role-aware UI. The server remains authoritative for access.
+`{ uuid, name, description, is_member }` (`is_member` flags the roles the caller belongs to);
+match those UUIDs against `me().user.roles` when building role-aware UI. The server remains
+authoritative for access.
 
 ## KV Store
 
