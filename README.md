@@ -11,10 +11,18 @@ work across Claude Code, Codex, Cursor, and other agents.
 | Skill | Description |
 | --- | --- |
 | [`create-railcode-app`](create-railcode-app/SKILL.md) | Build, modify, debug, and deploy Railcode static apps end-to-end — scaffolding with the CLI, wiring the zero-config SDK globals, configuring access policies, testing with `railcode dev`, and deploying. |
+| [`create-railcode-agent`](create-railcode-agent/SKILL.md) | Build, test, publish, invoke, and schedule org-scoped Railcode managed agents. |
+| [`manage-railcode-org`](manage-railcode-org/SKILL.md) | Administer apps, members, roles/grants, saved queries, connections, service connectors, analytics, and logs through the CLI. |
 
 ## Install
 
-Install a single skill by name:
+Install or update all Railcode skills:
+
+```bash
+npx skills add Railcode-HQ/railcode-skills
+```
+
+Or install a single skill by name:
 
 ```bash
 npx skills add Railcode-HQ/railcode-skills --skill create-railcode-app

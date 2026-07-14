@@ -42,8 +42,9 @@ After upload the CLI prints the live URL: `http://<app>.<org>.<serving-domain>/`
 ## App Access
 
 A newly created app defaults to **`organization`** access (every member of the org may open
-it). The owner or an org admin sets access in the **admin UI**, or via the access API (the
-one deploy-time exception is the one-shot `railcode deploy --private`, above):
+it). The owner or an org admin sets access in the **admin UI**, with the `railcode apps`
+commands (use `$manage-railcode-org` for full administration), or via the access API (the one
+deploy-time exception is the one-shot `railcode deploy --private`, above):
 
 ```text
 GET  /api/organizations/{org}/apps/{app}/access

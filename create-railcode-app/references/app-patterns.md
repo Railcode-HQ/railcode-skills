@@ -149,8 +149,7 @@ file-heavy view, prefer `files.urls(names)` over many `files.url(name)` redirect
 up to 100 existing files in one authenticated request and caches returned URLs in memory until
 shortly before expiry. Missing names are reported separately. For user-supplied names, generate
 a stable id for the storage name and keep the display name in KV. The current `railcode dev`
-emulator does not implement batching, so use `files.url(name)` during local development and
-verify `files.urls(names)` after deployment.
+emulator supports the same batched call, including shared/user/role storage scopes.
 
 ## Saved Query Pattern (Postgres / BigQuery / Turso)
 

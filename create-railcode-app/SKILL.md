@@ -1,7 +1,7 @@
 ---
 name: create-railcode-app
-description: Build, modify, debug, and deploy Railcode static apps and managed agents end-to-end. Use when creating a Railcode app or managed agent from an idea, using the Railcode CLI, managing/scheduling/running Railcode agents (railcode agent ...), wiring the zero-config SDK globals, explaining Railcode auth/data "magic", testing with railcode dev, understanding app access, or deploying apps to a Railcode server.
-version: 0.1.23
+description: Build, modify, debug, test, and deploy Railcode static apps end-to-end. Use when creating a Railcode app from an idea, scaffolding with the Railcode CLI, wiring the zero-config SDK globals, explaining Railcode auth/data "magic", testing with railcode dev, declaring app authority, understanding app access, or deploying an app. Do not use for managed-agent authoring or general organization administration.
+version: 0.1.24
 ---
 
 # Create Railcode App
@@ -30,17 +30,12 @@ Then honor what you find:
   in your handoff and proceed with the installed version rather than blocking, but don't claim
   the skill or CLI reflects the latest.
 
-This skill was last written against **CLI source 0.1.22** (npm publishes 0.1.22; document
-against the source behavior — the multi-tenant Railcode platform). The newest additions
-documented here are the **org admin console CLI commands** (`railcode apps`/`members`/`roles`/
-`connections`/`analytics`/`logs` plus the `connector` admin subcommands `native`/`enable`/
-`create`/`delete`) — added within the 0.1.22 source without a version bump, so a matching
-`railcode --version` doesn't guarantee they're present; see
-[cli-workflow.md → Org Admin Console](references/cli-workflow.md). App-building rarely needs
-them. That number is provenance, not a target to match — npm is the source of truth for the
-latest published CLI, while the source tree defines upcoming behavior. If a `railcode` command
-or flag documented here is missing or errors unexpectedly, suspect version drift first and
-re-run the updates above.
+This skill was last checked against the published **CLI 0.1.23** (the multi-tenant Railcode
+platform). It intentionally documents only commands relevant to building apps. Use
+`$create-railcode-agent` for managed-agent manifests/runs/schedules and
+`$manage-railcode-org` for organization administration. npm is the source of truth for the
+latest published CLI. If a documented command or flag is missing or errors unexpectedly,
+suspect version drift first and re-run the updates above.
 
 That same `skills add Railcode-HQ/railcode-skills` command is also the first-time install —
 `add` upserts, so it installs what's missing and refreshes what's already there. Targeting the
@@ -95,8 +90,8 @@ sections — following the **Implementation Rules**.
 
 Always write or update the app's `manifest.yaml` beside `railcode.json`. Use `run_as: user`
 for pass-through apps with no privileged app authority, and `run_as: app` only when the app
-needs ratified saved-query, connector, LLM, email, or explicitly requested direct-SQL
-authority.
+needs ratified saved-query, connector, LLM, email, managed-agent invocation, or explicitly
+requested direct-SQL authority.
 Validate it with `railcode manifest validate` before deploy.
 
 ### 4. Test before calling it done
@@ -139,7 +134,7 @@ template) is what `railcode deploy` uploads.
 
 Load only the reference needed for the task:
 
-- [CLI workflow](references/cli-workflow.md): exact `railcode` commands (login/init/dev/deploy/design-system) and local dev/deploy behavior.
+- [CLI workflow](references/cli-workflow.md): exact app-building commands (login/init/dev/deploy/design-system, app-facing data/connector/LLM calls, and access) plus local dev/deploy behavior.
 - [Platform magic](references/platform-magic.md): how same-origin auth, `/_api/sdk.js`, app/org identity, access policies, KV/files, SQL, service connectors, LLM, and email work.
 - [App patterns](references/app-patterns.md): implementation patterns for React/Vite apps, using the SDK globals, data modeling, SQL, connectors, LLM, and frontend expectations.
 - [Deployment](references/deployment.md): `railcode deploy`, app access, and post-deploy verification.
@@ -204,7 +199,9 @@ directly (in TypeScript, `declare` them or add an ambient `.d.ts`). The global S
   Governed and **off by default**: the org must grant `email` (or a `run_as: app`
   manifest declares `email: true`). Per-org daily recipient cap; self-hosted or an
   unconfigured provider returns `503`. (New in CLI/SDK 0.1.19.)
-- `agents.invoke(name, input?)` → invoke a managed agent available to the deployed app.
+- `agents.invoke(name, input?)` → invoke a managed agent available to the deployed app. A
+  `run_as: app` manifest declares allowed agents under `agents: [name]`; use
+  `$create-railcode-agent` to author or operate the managed agent itself.
 
 The SDK also ships a hidden live activity drawer that logs every call; toggle it with
 ``Ctrl+` `` (control + backtick) while developing. It is present in production too, just
@@ -241,9 +238,7 @@ Run `railcode dev` from the app directory (any directory with a `railcode.json`)
 
 Local dev emulates identity (`me`), app users, KV, and files entirely on local disk. The design system, SQL (`data`/`postgres`/`bigquery`/`turso`), data connectors, saved queries (`query`/`savedQueries`), service connectors, LLM, and email (`email.send`) are **forwarded to the configured Railcode instance** when the CLI has a saved API token — so those use the org's real provider, quota, databases, and mail delivery (real spend, real data, real email). Not logged in: `dataConnectors()`/`serviceConnectors()`/`savedQueries()` return empty and `data().runSQL()`/`query()`/`llm`/`email.send()` return `503`. The startup banner prints which mode you're in. Even in local development, prefer `query()`/`savedQueries()` and do not use direct SQL unless explicitly instructed. Email forwarding under `railcode dev` is new in CLI 0.1.19 — earlier CLIs 404 on `email.send()` locally.
 
-The current dev file emulator supports `files.upload` / `url` / `list` / `delete`, but not
-the new batch `files.urls()` endpoint. Exercise batching against a deployed app until the CLI
-emulator catches up.
+CLI 0.1.23's dev emulator supports scoped file operations including batched `files.urls()`.
 
 ## Validation
 

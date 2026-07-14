@@ -1,9 +1,18 @@
 # CLI Workflow
 
-Use this reference when an agent needs exact Railcode CLI behavior, local dev behavior, or
-app deploy behavior on the **multi-tenant** Railcode platform.
+## Contents
 
-The CLI ships as the npm package **`railcode`**. Its full command set is:
+- Install and login
+- Create and develop an app
+- Use app-facing data, saved-query, connector, and LLM commands
+- Deploy and set app access
+- Validate the app authority manifest
+
+Use this reference for exact Railcode CLI behavior relevant to building, testing, and
+deploying a static app on the **multi-tenant** Railcode platform. For managed agents use
+`$create-railcode-agent`; for organization administration use `$manage-railcode-org`.
+
+The CLI ships as the npm package **`railcode`**. The app-building subset is:
 
 ```
 railcode login [--api-url <url>]              Sign in (browser) and mint a personal API token
@@ -13,26 +22,19 @@ railcode dev [--port <n>] [--asset-port <n>] [--reset]   Run the app locally aga
 railcode deploy [--private]                   Build (if configured) and deploy the app here
 railcode design-system                        Print your org's design-system guidance (markdown)
 railcode db <list|query> ...                  List data connectors / run ad-hoc SQL
-railcode query <list|run|create|update|delete> ...   Saved queries: invoke by name / author (admin)
-railcode connector <list|docs|fetch|native|enable|create|delete> ...   Call service connectors / manage them (admin)
+railcode query <list|run> ...                List/invoke saved queries by name
+railcode connector <list|docs|fetch> ...     Inspect/call service connectors
 railcode llm <providers|models>               List the LLM providers/models apps can call
 railcode manifest <validate|show> ...         Validate manifest.yaml / show an app's ratified authority manifest
-railcode agent <list|show|pull|create|update|delete|test|run> ...   Manage org-scoped managed agents
-railcode agent schedule <show|set|add|update|pause|resume|delete|run-now> <agent>   The agent's one cron schedule
-railcode apps <list|show|access|set-access|transfer|delete> ...   Apps + access policy (owner/admin)
-railcode members <list|set-role|remove|add> ...   Org members + system roles (list: any member; mutations: admin)
-railcode roles <list|create|update|delete|add-member|remove-member|grants|grant|revoke|materialize|effective|catalog> ...   Org roles + granular grants (admin)
-railcode connections <list|create|delete> ... Manage org data connectors (admin)
-railcode analytics <app> [--range 7d|30d|90d]  Per-app pageview analytics (owner/admin)
-railcode logs <connector|service-connector|llm|email|agent> [filters]   Org observability logs (admin)
+railcode apps access <app>                    Inspect the deployed app's access policy
+railcode apps set-access <app> ...            Set access when the builder has manage rights
 railcode --version
 railcode --help
 ```
 
-The `apps`, `members`, `roles`, `connections`, `analytics`, `logs`, and the `connector`
-admin subcommands (`native`/`enable`/`create`/`delete`) mirror the web console's owner/admin
-surfaces — see [Org Admin Console](#org-admin-console-cli). App-building rarely needs them;
-they're documented so the command set above is complete.
+Organization-level commands are intentionally excluded. Load `$manage-railcode-org` when the
+task is to administer apps, members, roles/grants, connections, service connectors, saved
+queries, analytics, or logs.
 
 Upgrade the CLI through your package manager (`npm install -g railcode@latest`) — it's a
 regular npm package, not a self-updating binary.
@@ -217,35 +219,24 @@ org-scoped: they work straight after `railcode login`, no app required.
 ```bash
 railcode query list                                # signatures: name, params, version, description
 railcode query run my_orders --params '{"region":"emea","limit":5}'
-railcode query create --name my_orders --connection analytics \
-  --sql "select * from orders where region = :region limit :limit" \
-  --params '[{"name":"region","type":"string"},{"name":"limit","type":"int","default":20}]'
-railcode query update my_orders --sql-file my_orders.sql   # edit in place; version bumps
-railcode query delete my_orders                            # removes the query AND grants naming it
 ```
 
 - **Templates use `:name` placeholders** (not `$1`) matched to declared params, each typed
   `string | int | float | bool`. A param declared with a `"default"` is optional at invoke
   time — the server binds the default when the caller omits it.
-- **`--params` is JSON on every subcommand**: `run` takes one JSON **object** (exactly what
-  the API takes); `create`/`update` take a JSON **array** of
-  `{"name","type","default"?}` declarations.
-- **The SQL comes from `--sql` (inline) or `--sql-file`** — never both. Use the
-  `--sql="..."` form if the template starts with a `--` comment (a bare `--sql` followed by
-  a `--`-leading value is parsed as a flag).
-- **`update` edits in place** with PATCH semantics: pass any of `--sql`/`--sql-file`,
-  `--params` (replaces the declared list), `--clear-params` (declare none),
-  `--connection`, `--description`; omitted fields keep their value. Editing SQL or params
-  bumps the query's version; **grants naming the query survive** — unlike delete +
-  recreate, which removes them.
+- **`--params` for `run` is one JSON object**, exactly matching the SDK/API call.
 - **Context binds**: templates may reference `:_ctx_user_id`, `:_ctx_user_email` and
   `:_ctx_org` — the server injects those from whoever invokes, and a caller-supplied
   `_ctx*` param is rejected with a 400. `where rep_email = :_ctx_user_email` is per-caller
   row scoping the caller cannot forge.
-- `list`/`run` are member operations (invocation can be grant-gated per query by admins);
-  `create`/`update`/`delete` are **admin-only** (403 otherwise). `list` returns signatures
-  only, never the SQL text. Aliases: `query` = `queries`, `list` = `ls`, `run` = `invoke`;
-  `--json` on `run` prints the raw `{ columns, rows, rowcount, truncated }` envelope.
+- `list`/`run` are member operations (invocation can be grant-gated per query by admins).
+  `list` returns signatures only, never SQL text. Aliases: `query` = `queries`, `list` =
+  `ls`, `run` = `invoke`; `--json` on `run` prints the raw
+  `{ columns, rows, rowcount, truncated }` envelope.
+
+Publishing or changing a saved query is organization administration. Use
+`$manage-railcode-org` for `query create`/`update`/`delete` rather than expanding the app
+builder's scope.
 
 ## Call Service Connectors
 
@@ -305,72 +296,6 @@ An org can configure **many models across many providers**. In app code, calls r
 `opts.provider` (a provider name alone → that provider's default model) to `llm.generate()` /
 `llm.stream()`, or pass neither to use the org default marked in the listing.
 
-## Managed Agents
-
-*(New in CLI 0.1.20.)* A **managed agent** is a server-side AI agent your org runs —
-defined by a JSON manifest (model, system prompt, tools, optional input schema), stored
-under `agent.manifest`, and invoked on demand or on a cron schedule. This is a distinct
-surface from the static apps this skill mostly builds: agents live in the org, not in an
-app directory. Like `railcode db`/`connector`/`llm`, the commands are **org-scoped** and
-work straight after `railcode login` — **no app or `railcode.json` required** — hitting
-`/api/organizations/{org}/agents`.
-
-```bash
-railcode agent list                                     # name, model, uuid, updated
-railcode agent show <agent> [--manifest]                # one agent (or just its manifest JSON)
-railcode agent pull <agent> [--output agent.json]       # write the manifest for editing (stdout by default)
-railcode agent create --file agent.json                 # create from a JSON manifest
-railcode agent update <agent> --file agent.json         # replace an existing agent's manifest
-railcode agent delete <agent> [--yes]                   # archive it (run history is kept)
-railcode agent test --file agent.json --input '{"k":"v"}'   # run a draft manifest without saving
-railcode agent run <agent> --input '{"k":"v"}' [--trace]    # invoke a saved agent, print the result
-```
-
-- An `<agent>` reference is a **name or a UUID** (either resolves). Aliases: `list`=`ls`,
-  `show`=`get`, `pull`=`export`, `update`=`edit`, `delete`=`rm`, `run`=`invoke`;
-  `agent`=`agents`.
-- **Manifests are JSON** in the exact `agent.manifest` shape the API stores (note the
-  contrast with **app** manifests, which are YAML). `agent pull` writes the current
-  manifest so you can edit and re-`update` it; `agent show --manifest` prints it to stdout.
-- **`create`/`update`** print the agent name, UUID, and any ratification **warnings**;
-  `--json` prints the raw response. `delete` **archives** the agent (its run history is
-  kept) — it prompts unless you pass `--yes`, and requires `--yes` in a non-interactive
-  session.
-- **`run`/`test`** take input from `--input '<json>'` or `--input-file <path>` (default
-  `null`; the two are mutually exclusive) and print `Status:`, the request id, and the
-  output JSON. `--trace` appends the step trace (a table of each model/tool step);
-  `--json` prints the raw run detail. `test` runs an unsaved draft manifest; `run` invokes
-  a saved agent. Note the invocation exits **0** whenever the request itself succeeds — a
-  run that *fails at runtime* (a limit or model error) still prints its failed `Status` and
-  exits 0; only invalid input (schema mismatch) is a non-zero `422`. Check `Status:`/`--json`
-  in scripts rather than relying solely on the exit code.
-- **Permissions:** `list`/`show`/`pull` need agent-read; `run` also needs an
-  agent-invoke grant for that agent; `create`/`update`/`delete`/`test` and every
-  `schedule` mutation are **owner/admin** (403 otherwise).
-
-### Agent Schedules
-
-Each agent has **at most one** cron schedule (the poller fires it server-side). Schedules
-are a resource *under* the agent, not part of the manifest.
-
-```bash
-railcode agent schedule show <agent>                                  # the one schedule (or "no schedule")
-railcode agent schedule set <agent> --cron "0 9 * * *" --timezone UTC # create if missing, else update (upsert)
-railcode agent schedule pause <agent>                                 # disable without deleting
-railcode agent schedule resume <agent>                                # re-enable
-railcode agent schedule run-now <agent> [--trace]                     # fire it immediately, print the run
-railcode agent schedule delete <agent> [--yes]                        # remove the schedule
-```
-
-- **`set`** upserts the single schedule: it creates one when none exists (requires
-  `--cron`; `--name` defaults to `default`, `--timezone` to `UTC`, enabled by default) and
-  otherwise updates the existing one (pass any of `--name`, `--cron`, `--timezone`,
-  `--enabled`/`--disabled`). `add`/`create` create-only (error if one already exists) and
-  `update` update-only (error if none) are available when you want the stricter form.
-- `--cron` (alias `--schedule`) is a five-field cron expression; `--timezone` is an IANA
-  zone. `pause`/`resume` just toggle `enabled`. `run-now` (alias `run`) fires synchronously
-  and prints the run detail like `agent run`. `delete` (alias `rm`) prompts unless `--yes`.
-
 ## Deploy An App With The CLI
 
 ```bash
@@ -414,9 +339,9 @@ The `railcode.json` schema is `{ app, build?, dist?, dev?: { root?, command?, po
 ## App Access
 
 A new app defaults to **`organization`** access — every member of your org may open it.
-Access is otherwise managed in the **admin UI**, the `railcode apps` CLI commands (see
-[Org Admin Console](#org-admin-console-cli)), or the access API. The owner or an org admin
-changes it:
+Access is otherwise managed in the **admin UI**, the `railcode apps` CLI commands, or the
+access API. The owner or an org admin changes it; use `$manage-railcode-org` for broader app
+ownership and organization administration:
 
 ```bash
 railcode apps access <app>                          # show the current mode + per-user grants
@@ -464,6 +389,7 @@ connectors:                 # service-connector endpoints, per connector
 llm: true                   # LLM gateway access
 email: true                 # transactional email gateway access (email.send)
 adhoc_sql: [analytics]      # only when the user explicitly requested direct/ad-hoc SQL
+agents: [sales-digest]      # managed agents this app may invoke (agents.invoke)
 ```
 
 Commands:
@@ -476,8 +402,8 @@ railcode manifest show <app>        # the app's ratified doc + any pending diff 
 - `manifest validate` parses the file with the **same strict YAML grammar the server uses**
   (spaces not tabs; PyYAML 1.1 scalar rules — e.g. a bare `yes`/`no`/`on`/`off`/`null`/number
   resolves to a non-string and is rejected where a name is expected). It prints a summary of
-  the declared operations; resource **names** (queries, connectors, connections) are only
-  checked against your org at deploy.
+  the declared operations; resource **names** (queries, connectors, connections, agents) are
+  only checked against your org at deploy.
 - **On deploy**, the manifest is ratified against the deployer's own grants: operations you
   already hold ratify immediately; operations you **don't** hold land as a **pending diff
   awaiting approval** by someone who does. Deploy prints the outcome (`ratified` / `unchanged`
@@ -487,58 +413,3 @@ railcode manifest show <app>        # the app's ratified doc + any pending diff 
   current doc, its content hash, and any pending additions.
 - `adhoc_sql` grants raw SQL authority and is intentionally scarce. Do not add it unless the
   user explicitly requested direct/ad-hoc SQL; otherwise use `saved_queries`.
-
-## Org Admin Console (CLI)
-
-The CLI mirrors the web dashboard's owner/admin console, so an operator can do everything
-from the terminal. These are **org-scoped** (they target your saved org and work straight
-after `railcode login`, no app or `railcode.json`) and **gated server-side by the same
-capabilities as the console** — a plain member gets a `403` (`apps list`/`show`/`access`
-follow the per-app access policy, and `members list` is readable by any member). App-building
-rarely needs these; they're documented so the command set is complete. Most refs accept a
-**name/slug/email or UUID**; pass `--json` for raw output. Run `railcode <command> --help`
-for the full flag set.
-
-```bash
-railcode apps list                                  # slug, name, status, access, your role, manage
-railcode apps show <app>                             # one app's details
-railcode apps set-access <app> --mode private        # organization | private | restricted (+ --members)
-railcode apps transfer <app> --to <email|uuid>       # change ownership
-railcode apps delete <app> [--yes]                   # irreversible; prompts on a TTY, --yes to skip
-
-railcode members list                                # any member; set-role/remove/add are admin
-railcode members add --email <e> --name <n> --password <p> --role admin|member   # self-hosted provisioning
-railcode members set-role <email|uuid> --role admin|member
-railcode members remove <email|uuid>
-
-railcode roles list                                  # admin-defined org roles + member counts
-railcode roles create --name <n> [--description <d>] # also: update/delete/add-member/remove-member
-railcode roles grant --subject <org|role:X|user:X> --resource <type> --ids <a,b>   # additive grants
-railcode roles grants                                # list grant rows; revoke <id>; materialize --subject/--resource
-railcode roles effective <email|uuid>                # a member's computed effective access
-railcode roles catalog                               # grantable resources (apps/connectors/queries/…)
-
-railcode connections list                            # org data connectors (postgres|bigquery|turso)
-railcode connections create --name <n> --kind postgres --config '{...}' --credentials '{...}'   # dials before saving
-railcode connections delete <name|uuid>
-
-railcode connector list [--admin]                    # --admin: base_url, credential + enabled state, native key
-railcode connector native                            # native presets (stripe/resend/…) + enabled state
-railcode connector enable <key> --credentials '{...}'    # one-click enable/rotate a native preset
-railcode connector create --name <n> --base-url <url> [--auth-type <t>] [--auth-config '{...}']
-railcode connector delete <name|uuid>
-
-railcode analytics <app> [--range 7d|30d|90d]        # per-app pageviews: totals, daily, top paths/users (default 30d)
-
-railcode logs <stream> [filters]                     # streams: connector|service-connector|llm|email|agent
-railcode logs <stream> <request_id>                  # full JSON detail for one entry
-```
-
-- `roles` manage the **granular grants substrate** (`--resource` ∈
-  `app|llm|email|sc_endpoint|connector|saved_query|agent`); this is the same model the app
-  `manifest.yaml` ratifies against. `roles effective`/`apps access` show who can reach what
-  (`apps access` also lists app access conferred via `roles grant --resource app`).
-- `logs` filters are per-stream (`--app`, `--user`, `--connector`, `--agent`, `--source`,
-  `--status`, `--limit 1..500`); unsupported filters are rejected with the valid set.
-- Errors are actionable: unknown refs, bad enum values, and missing flags print the accepted
-  values; destructive `apps delete` needs `--yes` in a non-interactive session.
