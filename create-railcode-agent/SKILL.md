@@ -1,7 +1,7 @@
 ---
 name: create-railcode-agent
 description: Build, test, publish, invoke, schedule, and update Railcode managed agents with the Railcode CLI. Use when creating an org-scoped managed agent, editing an agent JSON manifest, running a draft or saved agent, investigating an agent run, or managing its cron schedule. Do not use for static Railcode apps or general organization administration.
-version: 0.1.0
+version: 0.1.1
 ---
 
 # Create Railcode Agent
@@ -20,7 +20,11 @@ npm view railcode version
 
 If the skill changes, re-read this file from the top. If npm is unreachable, state that the
 latest version could not be verified and do not claim this guidance is current. This version
-was checked against the published **Railcode CLI 0.1.23**.
+was checked against the published **Railcode CLI 0.1.23**. The
+[manifest tools reference](references/manifest-tools.md) reflects the backend `tools.*` schema
+as of 2026-07-16 (adds `app_data_write` — write access to another app's KV + file publish); the
+CLI itself has no manifest schema of its own, so that reference is versioned against the
+backend, not the CLI package.
 
 ## Build Workflow
 
@@ -35,7 +39,10 @@ Clarify only choices that materially change its definition:
 - what real systems, data, spend, or side effects a test may touch.
 
 Use the narrowest useful tool set and explicit instructions. Do not invent tool identifiers,
-provider names, or manifest fields; managed-agent manifests are server-defined JSON.
+provider names, or manifest fields; managed-agent manifests are server-defined JSON. See
+[manifest tools reference](references/manifest-tools.md) for the current `tools.*` vocabulary
+and `limits` — a snapshot of the server schema, not a contract; a save-time error always wins
+over this file.
 
 ### 2. Authenticate and inspect
 
@@ -67,6 +74,11 @@ needed authorization before running a side-effecting test.
 
 Do not rely only on the process exit code: a request that reached the runtime can exit 0 even
 when the run's printed status is failed. Check `Status:` or inspect `--json`.
+
+A draft test run has no persistent store: write tools from `app_data_write` and `agent_kv` are
+silently omitted from a test run's tool list (see
+[manifest tools reference](references/manifest-tools.md)). An untouched app or KV store after
+`test` is not evidence those tools are broken — verify writes with `create` + `run` instead.
 
 ### 4. Publish or update
 
@@ -116,4 +128,6 @@ mutation. `run-now` executes synchronously against real services.
 ## Reference
 
 Read [CLI reference](references/cli-workflow.md) for the exact agent commands, aliases,
-schedule behavior, inputs, outputs, and failure semantics.
+schedule behavior, inputs, outputs, and failure semantics. Read
+[manifest tools reference](references/manifest-tools.md) for the `tools.*` vocabulary,
+what each grants, its permission gate, and `limits`.
