@@ -251,8 +251,11 @@ const result = await llm.generate(prompt, {
 // result.output holds the parsed JSON
 ```
 
-Streaming is text-only (`llm.stream()` rejects JSON output). Render provider errors and
-token-cap failures as normal app states; do not retry indefinitely.
+Streaming is text-only (`llm.stream()` rejects JSON output). A stream's `{ type: "error" }`
+event carries a classified `error` code (e.g. `provider_auth_error`, `provider_rate_limited`)
+and a `retryable` flag — check `retryable` before offering a retry rather than assuming every
+failure is transient. Render provider errors and token-cap failures as normal app states; do
+not retry indefinitely.
 
 Model selection is optional. Omit `provider`/`model` and the call uses the org default. To let
 the app target a specific model, enumerate the org's catalog with `llmProviders()`

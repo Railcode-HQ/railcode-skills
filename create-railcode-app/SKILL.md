@@ -1,7 +1,7 @@
 ---
 name: create-railcode-app
 description: Build, modify, debug, test, and deploy Railcode static apps end-to-end. Use when creating a Railcode app from an idea, scaffolding with the Railcode CLI, wiring the zero-config SDK globals, explaining Railcode auth/data "magic", testing with railcode dev, declaring app authority, understanding app access, or deploying an app. Do not use for managed-agent authoring or general organization administration.
-version: 0.1.24
+version: 0.1.25
 ---
 
 # Create Railcode App
@@ -30,7 +30,7 @@ Then honor what you find:
   in your handoff and proceed with the installed version rather than blocking, but don't claim
   the skill or CLI reflects the latest.
 
-This skill was last checked against the published **CLI 0.1.23** (the multi-tenant Railcode
+This skill was last checked against the published **CLI 0.1.24** (the multi-tenant Railcode
 platform). It intentionally documents only commands relevant to building apps. Use
 `$create-railcode-agent` for managed-agent manifests/runs/schedules and
 `$manage-railcode-org` for organization administration. npm is the source of truth for the
@@ -199,13 +199,19 @@ directly (in TypeScript, `declare` them or add an ambient `.d.ts`). The global S
   Governed and **off by default**: the org must grant `email` (or a `run_as: app`
   manifest declares `email: true`). Per-org daily recipient cap; self-hosted or an
   unconfigured provider returns `503`. (New in CLI/SDK 0.1.19.)
-- `agents.invoke(name, input?)` → invoke a managed agent available to the deployed app. A
+- `agents.invoke(name, input?)` → invoke a managed agent available to the deployed app and
+  resolve with the FINISHED run (it polls a queued/running run to a terminal status for you).
+  Runs execute off the request now, so a long agent no longer risks a gateway timeout. A
   `run_as: app` manifest declares allowed agents under `agents: [name]`; use
-  `$create-railcode-agent` to author or operate the managed agent itself.
+  `$create-railcode-agent` to author or operate the managed agent itself. Use
+  `agents.start(name, input?)` (returns immediately with the queued run) plus
+  `agents.get(requestId)` to poll yourself — e.g. to show progress instead of blocking on
+  `invoke()`. (`start`/`get` and the `queued` status new in CLI/SDK 0.1.24.)
 
-The SDK also ships a hidden live activity drawer that logs every call; toggle it with
-``Ctrl+` `` (control + backtick) while developing. It is present in production too, just
-dormant until opened.
+The SDK also ships a live activity drawer that logs every call; toggle it with ``Ctrl+` ``
+(control + backtick). Org admins/owners also get a small floating button, bottom-right, that
+does the same thing — everyone else keeps the undocumented keyboard toggle only. It is present
+in production too, just dormant until opened.
 
 ## Visual Direction
 

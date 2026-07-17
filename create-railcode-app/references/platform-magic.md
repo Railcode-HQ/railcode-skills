@@ -94,12 +94,19 @@ The globals are exactly: `me`, `appUsers`, `roles`, `designSystem`, `db`, `files
   are dialect-pinned and only reach connections of that engine. `dataConnectors()` lists the
   configured connections as `{ engine, name }`, where engine is `postgres`, `bigquery`, or
   `turso`.
+- `agents.invoke(name, input?)` starts a managed agent run and polls it to a terminal status
+  for you (`success`/`failed`/`cancelled`/`limit_exceeded`); runs execute off the request, so a
+  long agent no longer risks a gateway timeout. `agents.start(name, input?)` returns
+  immediately with the `queued` run instead, and `agents.get(requestId)` reads it back — use
+  the pair to show progress rather than block on `invoke()`. *(`start`/`get` new in CLI/SDK
+  0.1.24.)*
 
-The SDK also ships a hidden live inspector drawer that logs every call (`db`, `files`, `llm`,
+The SDK also ships a live inspector drawer that logs every call (`db`, `files`, `llm`,
 `email`, `data`/`postgres`/`bigquery`/`turso`, `connector`, `me()`, `appUsers()`, `roles()`, `designSystem()`) with a pending → ok/error
-transition and timing. It has no on-screen affordance — toggle it with ``Ctrl+` `` (control +
-backtick). It is present in production too, just dormant until opened. Do not swallow SDK
-errors; surface useful error states in the app.
+transition and timing. Toggle it with ``Ctrl+` `` (control + backtick); org admins/owners also
+get a small floating button, bottom-right, for the same toggle (everyone else keeps only the
+keyboard shortcut). It is present in production too, just dormant until opened. Do not swallow
+SDK errors; surface useful error states in the app.
 
 ## Access Policies
 
@@ -327,10 +334,17 @@ const result = await llm.generate("Classify this customer.", {
   in `required` — make optional fields nullable (`{ type: ["string", "null"] }`) rather than
   omitting them.
 - `llm.stream(input, opts)` is an async iterator of `{ type: "text" }` / `{ type: "done" }` /
-  `{ type: "error" }` events; it is **text-only** and rejects JSON output client-side.
+  `{ type: "error" }` events; it is **text-only** and rejects JSON output client-side. An error
+  event's `error` field is a stable failure class (`provider_auth_error`,
+  `provider_model_error`, `provider_rate_limited`, `provider_timeout`, `provider_bad_request`,
+  `provider_error`) and `retryable` says whether repeating the same call could ever succeed —
+  `false` means an org admin has to fix the provider config first, not a transient blip.
+  `llm.generate()` failures carry the same classification in the thrown error's message.
+  *(New in CLI/SDK 0.1.24 — previously every provider failure flattened to one generic
+  message.)*
 - Always send `metadata` for audit/attribution. Expect daily token caps, provider timeouts,
   and input limits enforced server-side; render those failures as normal app states and do
-  not retry indefinitely.
+  not retry indefinitely — branch on `retryable` rather than guessing.
 
 ## Email
 
