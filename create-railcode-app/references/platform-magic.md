@@ -78,17 +78,21 @@ const resp = await connector("stripe").fetch("/v1/charges", { method: "POST", bo
 const svc  = await serviceConnectors();           // [{ name, description, auth_type, allowed_methods }]
 
 const out  = await llm.generate("Summarize this record.", { metadata: { feature: "summary" } });
+
+const gmailTools = await personalConnections.tools("gmail");       // this app's declared subset
+const sent = await personalConnections.call("gmail", "GMAIL_SEND_EMAIL", { recipient_email, subject, body });
 ```
 
 The globals are exactly: `me`, `appUsers`, `roles`, `designSystem`, `db`, `files`, `data`, `postgres`,
 `bigquery`, `turso`, `dataConnectors`, `query`, `savedQueries`, `connector`,
-`serviceConnectors`, `llm`, `llmProviders`, `email`, `agents`. Notes:
+`serviceConnectors`, `llm`, `llmProviders`, `email`, `agents`, `personalConnections`. Notes:
 
 - `me()` returns nested objects. Use **`me().user.uuid`** as the stable per-user key for
   ownership/permissions/KV prefixes; `me().user.name`/`.email` are for display.
-  `me().user.is_admin` is true for org owners and admins, and `me().user.roles` is the
-  caller's assigned custom roles as `{ uuid, name }[]`. These are UI hints only; server-side
-  authorization remains authoritative.
+  `me().user.is_admin` is true for org owners and admins, `me().user.roles` is the
+  caller's assigned custom roles as `{ uuid, name }[]`, and `me().user.is_app_owner` tells
+  the caller whether they hold the running app's owner grant *(new in CLI/SDK 0.1.25)*.
+  These are UI hints only; server-side authorization remains authoritative.
 - SQL runs through the database namespaces: `data(name)` is engine-generic (dispatches on the
   connection's stored kind server-side); `postgres(name)` / `bigquery(name)` / `turso(name)`
   are dialect-pinned and only reach connections of that engine. `dataConnectors()` lists the
@@ -102,11 +106,12 @@ The globals are exactly: `me`, `appUsers`, `roles`, `designSystem`, `db`, `files
   0.1.24.)*
 
 The SDK also ships a live inspector drawer that logs every call (`db`, `files`, `llm`,
-`email`, `data`/`postgres`/`bigquery`/`turso`, `connector`, `me()`, `appUsers()`, `roles()`, `designSystem()`) with a pending → ok/error
-transition and timing. Toggle it with ``Ctrl+` `` (control + backtick); org admins/owners also
-get a small floating button, bottom-right, for the same toggle (everyone else keeps only the
-keyboard shortcut). It is present in production too, just dormant until opened. Do not swallow
-SDK errors; surface useful error states in the app.
+`email`, `data`/`postgres`/`bigquery`/`turso`, `connector`, `personalConnections`, `me()`, `appUsers()`, `roles()`, `designSystem()`) with a pending → ok/error
+transition and timing. Toggle it with ``Ctrl+` `` (control + backtick); org admins/owners
+**and the current app's owner** (`me().user.is_app_owner`) also get a small floating button,
+bottom-right, for the same toggle (everyone else keeps only the keyboard shortcut). It is
+present in production too, just dormant until opened. Do not swallow SDK errors; surface
+useful error states in the app.
 
 ## Access Policies
 
@@ -298,6 +303,52 @@ if (resp.ok) {
 `allowed_methods` (405) and strips upstream auth/`Set-Cookie` headers; the response is
 truncated at a size limit (`resp.truncated`).
 
+## Personal Connectors
+
+*(New in CLI/SDK 0.1.26.)* A **personal connector** is the caller's **own** connected
+third-party account (Gmail, Slack, ...), brokered by Composio — the opposite ownership axis
+from a service connector. A service connector is one credential the *org* configures and
+every allowed caller shares; a personal connector is one connection each *individual* signs
+in and links themselves, and only they can drive it.
+
+```js
+const connections = await personalConnections.list();              // your status per declared toolkit
+const { redirect_url } = await personalConnections.connect("gmail"); // open in a POPUP, not a redirect
+const tools = await personalConnections.tools("gmail");             // this app's declared subset only
+const { result } = await personalConnections.call("gmail", "GMAIL_SEND_EMAIL", {
+  recipient_email: "user@example.com", subject: "Hi", body: "...",
+});
+```
+
+Two different kinds of operation live on this one global, and the difference is load-bearing:
+
+- **`list()` and `connect(toolkit)` are identity ops.** Linking your own account authorizes
+  itself — there's no manifest check on them beyond the app only being able to offer toolkits
+  it declares (so it can't walk a caller through connecting an account it could never use).
+  `connect()` returns `{ redirect_url }`, the provider's OAuth URL. Open it in a **popup**, not
+  a full-page redirect — a redirect would blow away whatever the user was doing in the app,
+  and JavaScript cannot observe a cross-origin popup closing, so poll `list()` while it's open
+  and close it once the toolkit reports connected.
+- **`call()` is not an identity op.** Which app may drive an already-connected account, and
+  how much of it, comes from **this app's ratified `personal_connectors:` manifest** — not
+  from what the caller could do themselves. An app declaring `gmail:GMAIL_SEND_EMAIL` can send
+  mail as the caller and cannot read their inbox, even though the caller personally could do
+  both. `tools(toolkit)` returns only the app's declared subset (its schema is what `call()`
+  expects). An undeclared toolkit/tool is a `403` **every time**; an app with no ratified
+  `personal_connectors:` manifest can call nothing at all. `call()` is `404` if the tool isn't
+  part of that toolkit, and `409` if the caller hasn't connected that toolkit yet — render the
+  `409` as a "Connect your account" prompt, not an error state.
+
+This is distinct from an admin-configured **service connector** (`connector()` /
+`serviceConnectors()`, above): a service connector is one org-wide credential every allowed
+caller shares; a personal connector is each individual's own account, gated per-app by what
+that app declares. It's also distinct from a managed agent's `tools.personal_connectors` —
+that variant runs against the *agent's owner's* connection (see `$create-railcode-agent`),
+not the calling app's viewer.
+
+`railcode dev` reproduces this exact gate locally against your app's `manifest.yaml` — see
+[cli-workflow.md](cli-workflow.md#local-dev).
+
 ## LLM
 
 API keys and the org default `(provider, model)` are admin-controlled — apps never see keys.
@@ -393,8 +444,16 @@ const res = await email.send({
   spend + data — `email.send()` sends actual email). Email forwarding is new in CLI 0.1.19;
   earlier CLIs 404 on `email.send()` in dev.
 - Not logged in: `dataConnectors()`/`serviceConnectors()`/`savedQueries()` return empty and
-  `data().runSQL()`/`query()`/`llm`/`email.send()` return `503` (never `401`). The startup
-  banner says which mode you're in, so you don't have to fire a request to find out.
+  `data().runSQL()`/`query()`/`llm`/`email.send()`/`personalConnections.*` return `503`
+  (never `401`). The startup banner says which mode you're in, so you don't have to fire a
+  request to find out.
+- `personalConnections.*` also forwards to the real instance when logged in, as **you**, the
+  signed-in developer — but it's the one proxy here that is **not** simply bound by your own
+  grants. The dev server reads your app's local `manifest.yaml` `personal_connectors:` and
+  reproduces the same app-plane gate production enforces: an undeclared toolkit/tool `403`s
+  locally too, before the request ever reaches your real connected account. *(New in CLI/SDK
+  0.1.26.)*
 
 This lets agents build most app behavior without a live server, then layer on
-production-backed SQL/LLM/connectors/email once credentials and access are available.
+production-backed SQL/LLM/connectors/email/personal-connectors once credentials and access
+are available.

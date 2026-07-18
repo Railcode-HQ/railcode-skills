@@ -1,7 +1,7 @@
 ---
 name: create-railcode-app
 description: Build, modify, debug, test, and deploy Railcode static apps end-to-end. Use when creating a Railcode app from an idea, scaffolding with the Railcode CLI, wiring the zero-config SDK globals, explaining Railcode auth/data "magic", testing with railcode dev, declaring app authority, understanding app access, or deploying an app. Do not use for managed-agent authoring or general organization administration.
-version: 0.1.25
+version: 0.1.26
 ---
 
 # Create Railcode App
@@ -30,7 +30,7 @@ Then honor what you find:
   in your handoff and proceed with the installed version rather than blocking, but don't claim
   the skill or CLI reflects the latest.
 
-This skill was last checked against the published **CLI 0.1.24** (the multi-tenant Railcode
+This skill was last checked against the published **CLI 0.1.26** (the multi-tenant Railcode
 platform). It intentionally documents only commands relevant to building apps. Use
 `$create-railcode-agent` for managed-agent manifests/runs/schedules and
 `$manage-railcode-org` for organization administration. npm is the source of truth for the
@@ -90,8 +90,8 @@ sections — following the **Implementation Rules**.
 
 Always write or update the app's `manifest.yaml` beside `railcode.json`. Use `run_as: user`
 for pass-through apps with no privileged app authority, and `run_as: app` only when the app
-needs ratified saved-query, connector, LLM, email, managed-agent invocation, or explicitly
-requested direct-SQL authority.
+needs ratified saved-query, connector, LLM, email, managed-agent invocation, personal-connector
+tool-calling, or explicitly requested direct-SQL authority.
 Validate it with `railcode manifest validate` before deploy.
 
 ### 4. Test before calling it done
@@ -149,9 +149,11 @@ templates do this). On load it attaches a fixed set of globals to `window` — t
 directly (in TypeScript, `declare` them or add an ambient `.d.ts`). The global SDK surface is:
 
 - `me()` → `{ user, app, org }`; `user` includes org-level `is_admin` plus assigned custom
-  roles as `{ uuid, name }`. `appUsers()` → org members with `is_admin` but no role
-  memberships. `roles()` → every custom org role as `{ uuid, name, description, is_member }`
-  (`is_member` = whether the current caller belongs to that role).
+  roles as `{ uuid, name }`, and `is_app_owner` — whether the caller holds the running app's
+  owner grant (a UI hint; server-side authorization is unaffected). `appUsers()` → org members
+  with `is_admin` but no role memberships. `roles()` → every custom org role as
+  `{ uuid, name, description, is_member }` (`is_member` = whether the current caller belongs
+  to that role).
 - `designSystem()` → the org's design-system guidance (markdown string), same content as
   `railcode design-system`.
 - `db.collection(name)` → per-app KV (`get`/`put`/`delete`/`list`). Start a query with
@@ -207,11 +209,21 @@ directly (in TypeScript, `declare` them or add an ambient `.d.ts`). The global S
   `agents.start(name, input?)` (returns immediately with the queued run) plus
   `agents.get(requestId)` to poll yourself — e.g. to show progress instead of blocking on
   `invoke()`. (`start`/`get` and the `queued` status new in CLI/SDK 0.1.24.)
+- `personalConnections` → the **caller's own** connected third-party accounts (Gmail, Slack,
+  ...), brokered by Composio — distinct from `connector()` (an org-admin-configured service
+  connector). `list()` and `connect(toolkit)` are identity ops (no manifest check beyond the
+  app only offering toolkits it declares); `tools(toolkit)` and `call(toolkit, tool, args)` are
+  bound by **this app's ratified `personal_connectors:` manifest declaration** — undeclared is
+  a `403` every time, even though the caller could do it by hand. A manifest declaring
+  `gmail:GMAIL_SEND_EMAIL` lets the app send mail as the caller and nothing else. `call()`
+  returns `409` if the caller hasn't connected that toolkit yet — render that as a "Connect
+  your account" prompt, not an error. (New in CLI/SDK 0.1.26.)
 
 The SDK also ships a live activity drawer that logs every call; toggle it with ``Ctrl+` ``
-(control + backtick). Org admins/owners also get a small floating button, bottom-right, that
-does the same thing — everyone else keeps the undocumented keyboard toggle only. It is present
-in production too, just dormant until opened.
+(control + backtick). Org admins/owners **and the current app's owner** also get a small
+floating button, bottom-right, that does the same thing — everyone else keeps the
+undocumented keyboard toggle only. It is present in production too, just dormant until
+opened.
 
 ## Visual Direction
 

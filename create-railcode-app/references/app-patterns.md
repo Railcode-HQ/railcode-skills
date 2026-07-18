@@ -50,7 +50,7 @@ declare const db: {
   };
 };
 // likewise: files, llm, llmProviders, data, postgres, bigquery, turso, dataConnectors,
-// connector, serviceConnectors, designSystem, email
+// connector, serviceConnectors, designSystem, email, personalConnections
 ```
 
 If a global is `undefined` at runtime, the page is almost certainly being served directly by
@@ -290,6 +290,53 @@ ordinary UI states; never retry in a loop. Do not put addresses the user hasn't 
 in `to`/`cc`/`bcc`. Under `railcode dev` this forwards to the org's real mailer (real email is
 sent) when logged in — new in CLI 0.1.19.
 
+## Personal Connectors Pattern
+
+Declare the narrowest toolkit/tool set your app actually calls, under `run_as: app` in
+`manifest.yaml`:
+
+```yaml
+run_as: app
+personal_connectors:
+  - gmail:GMAIL_SEND_EMAIL
+```
+
+Gate the UI on connection state, not just a try/catch — `call()`'s `409` means "not
+connected yet," which is a normal state to design for, not an error:
+
+```ts
+async function sendViaGmail(to: string, subject: string, body: string) {
+  try {
+    const { result } = await personalConnections.call("gmail", "GMAIL_SEND_EMAIL", {
+      recipient_email: to, subject, body,
+    });
+    return result;
+  } catch (err) {
+    if (err.status === 409) {
+      // Not connected yet — show a "Connect Gmail" affordance instead of an error.
+      const { redirect_url } = await personalConnections.connect("gmail");
+      window.open(redirect_url, "_blank", "width=500,height=650"); // popup, not location.href
+      return null;
+    }
+    throw err; // 403 (undeclared) means the manifest is missing the toolkit/tool — fix the manifest
+  }
+}
+```
+
+- Use `personalConnections.tools("gmail")` at build time (or `railcode personal-connectors
+  tools gmail`) to see the exact tool name and argument schema before writing the manifest
+  entry or the call — do not guess Composio tool names.
+- `list()` tells you per-toolkit connection status up front, so you can show a settings-style
+  "connect your account" panel instead of waiting for a `call()` to fail.
+- **Always open `connect()`'s `redirect_url` in a popup, never `location.href`.** A full-page
+  redirect abandons whatever the user was doing; poll `list()` while the popup is open and
+  close it once the toolkit reports connected (cross-origin popups can't be observed closing
+  from JavaScript, so poll rather than listen for a close event).
+- This is the caller's **own** account, scoped by what **this app** declares — do not confuse
+  it with an org-admin `connector()` service connector (one shared credential) or with a
+  managed agent's `tools.personal_connectors` (runs as the agent's owner, not the app's
+  viewer).
+
 ## Build And Check
 
 For the react template:
@@ -327,3 +374,6 @@ RAILCODE_API_URL=https://api.apps.example.com RAILCODE_API_TOKEN=<token> railcod
 - Assuming SQL/LLM/connectors/email are always available — they need admin configuration and (in
   `railcode dev`) a saved login; expect empty/`503` otherwise. Email additionally needs an
   explicit `email` grant (or `email: true` manifest) — expect `403` until granted.
+- Opening `personalConnections.connect()`'s URL with `location.href` instead of a popup — it
+  abandons the app's in-progress state. And treating `call()`'s `409` (not connected yet) as
+  an error instead of a normal "connect your account" state.

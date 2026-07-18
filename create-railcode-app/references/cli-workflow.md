@@ -24,6 +24,7 @@ railcode design-system                        Print your org's design-system gui
 railcode db <list|query> ...                  List data connectors / run ad-hoc SQL
 railcode query <list|run> ...                List/invoke saved queries by name
 railcode connector <list|docs|fetch> ...     Inspect/call service connectors
+railcode personal-connectors <list|tools|connect|call> ...   Your own connected accounts (Gmail, Slack, ...)
 railcode llm <providers|models>               List the LLM providers/models apps can call
 railcode manifest <validate|show> ...         Validate manifest.yaml / show an app's ratified authority manifest
 railcode apps access <app>                    Inspect the deployed app's access policy
@@ -154,10 +155,19 @@ real instance:
   real provider, quota, databases, connectors, and mail — **real spend and real data**.
   Authority is your own grants (a deployed app is instead bound by its ratified manifest).
   Email forwarding is new in CLI 0.1.19; earlier CLIs 404 on `email.send()` in dev.
+- `/_api/personal-connections*` (`personalConnections.list/connect/tools/call`) is **also
+  proxied**, to the real `/api/personal-connections/*` user plane as you, the signed-in
+  developer — but unlike every proxy above, it is **not** simply bound by your own grants.
+  The dev server reads the app's local `manifest.yaml` `personal_connectors:` and reproduces
+  the exact prod app-plane gate: `list()`/`tools()` filter to your declared toolkits, `connect()`
+  requires the toolkit be declared, and `call()` resolves the tool's toolkit and refuses
+  anything undeclared with a `403` — **before** the request ever reaches the user plane. An
+  app with no `personal_connectors:` declared can call none of it locally, same as in prod.
+  (New in CLI 0.1.26.)
 
 When you're **not logged in**, the list endpoints (`connections`, `service-connectors`,
 `llm/providers`) degrade to empty and the call endpoints (`llm`, `sql`, `email/send`, a
-connector `request`) return `503`
+connector `request`, and every `personal-connections/*` route) return `503`
 (never `401`, which the SDK would treat as a session lapse and reload-loop on). The startup
 banner states which mode you're in.
 
@@ -269,6 +279,41 @@ required**, hitting the same `/api/organizations/{org}/data/*` plane.
   connector or the server returns 405), `--body <string>` / `--file <path>` (mutually
   exclusive), `--json` prints the raw `{ status, ok, headers, body, truncated }` envelope. A
   non-2xx upstream status is still printed, but the command exits non-zero.
+
+## Call Personal Connectors
+
+*(New in CLI 0.1.26.)*
+
+```bash
+railcode personal-connectors list                                    # toolkits this deployment brokers + your status
+railcode personal-connectors tools gmail                             # gmail's callable tools + input schemas
+railcode personal-connectors connect gmail                           # print an OAuth URL to open in a browser
+railcode personal-connectors call gmail GMAIL_SEND_EMAIL --args '{"recipient_email":"a@b.com","subject":"hi","body":"hi"}'
+```
+
+`railcode personal-connectors` (aliases `personal-connector`, `pc`) manages **your own**
+connected third-party accounts (Gmail, Slack, ...), brokered by Composio — distinct from an
+org's admin-configured **service connectors** (`railcode connector`) and from an app's
+`personal_connectors:` manifest declaration below. It hits the **non-org-scoped**
+`/api/personal-connections/*` plane: a personal connection belongs to the human who ran
+`railcode login`, not the org, so these commands work straight after login with no app
+required.
+
+- `list` — toolkits this deployment brokers and whether **you** have connected each one.
+  A `503` here means the deployment itself has personal connectors turned off
+  (`PERSONAL_CONNECTORS_ENABLED` is an instance-level setting, not something an org
+  configures).
+- `tools <toolkit>` — that toolkit's full callable-tool catalog with input schemas, so you
+  know what to write into an app's `personal_connectors:` and what
+  `personalConnections.call(toolkit, tool, args)` expects.
+- `connect <toolkit>` — prints the provider's OAuth URL; open it in a browser yourself (the
+  CLI doesn't open it for you).
+- `call <toolkit> <tool> [--args '<json>']` — runs one tool **as you**, against your own
+  connected account. This is an identity op like `list`/`connect` — there is no app manifest
+  bound on this CLI surface, since you're calling your own account with your own login, the
+  same thing you could do by hand. (The app-plane equivalent, `personalConnections.call()` in
+  the SDK, **is** bound by the calling app's ratified manifest — see
+  [App Manifest](#app-manifest-authority) below.)
 
 ## LLM Gateway
 
@@ -390,6 +435,10 @@ llm: true                   # LLM gateway access
 email: true                 # transactional email gateway access (email.send)
 adhoc_sql: [analytics]      # only when the user explicitly requested direct/ad-hoc SQL
 agents: [sales-digest]      # managed agents this app may invoke (agents.invoke)
+personal_connectors:        # which of the CALLER'S OWN connected accounts + tools this
+  - gmail:GMAIL_SEND_EMAIL  # app may call via personalConnections.call() — a toolkit list,
+  - slack                   # not a boolean; "gmail" (whole toolkit) or "gmail:*" both work,
+                             # but name the narrowest tool the app actually needs
 ```
 
 Commands:
@@ -413,3 +462,9 @@ railcode manifest show <app>        # the app's ratified doc + any pending diff 
   current doc, its content hash, and any pending additions.
 - `adhoc_sql` grants raw SQL authority and is intentionally scarce. Do not add it unless the
   user explicitly requested direct/ad-hoc SQL; otherwise use `saved_queries`.
+- `personal_connectors` is unlike every other key above: it does **not** ratify against the
+  *deployer's* grants, because there is no shared resource to ratify — it bounds which of
+  **each individual caller's own** connected accounts the app may touch, and how much.
+  Declaring `gmail:GMAIL_SEND_EMAIL` never lets the app read anyone's inbox, even though a
+  caller could do that themselves; an undeclared toolkit/tool is a `403` for every caller, no
+  matter who deployed the app or what they personally hold.
