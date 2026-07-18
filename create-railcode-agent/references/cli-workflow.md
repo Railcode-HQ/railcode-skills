@@ -26,10 +26,10 @@ directory after login.
 railcode agent list
 railcode agent show <agent> [--manifest]
 railcode agent pull <agent> [--output agent.json]
-railcode agent create --file agent.json
-railcode agent update <agent> --file agent.json
+railcode agent create --file agent.json [--visibility org|personal]
+railcode agent update <agent> --file agent.json [--visibility org|personal]
 railcode agent delete <agent> [--yes]
-railcode agent test --file agent.json --input '{"k":"v"}' [--trace]
+railcode agent test --file agent.json --input '{"k":"v"}' [--trace] [--visibility org|personal]
 railcode agent run <agent> --input '{"k":"v"}' [--trace]
 ```
 
@@ -38,8 +38,15 @@ railcode agent run <agent> --input '{"k":"v"}' [--trace]
 - Manifests are JSON in the exact shape stored under `agent.manifest`. They are distinct from
   app authority manifests, which are YAML. `pull` writes only the current manifest;
   `show --manifest` prints it.
-- `create` and `update` print the agent name, UUID, and ratification warnings. `--json` prints
-  the raw response. `update` replaces the stored manifest.
+- `create` and `update` print the agent name, UUID, visibility, and ratification warnings.
+  `--json` prints the raw response. `update` replaces the stored manifest.
+- **`--visibility <org|personal>`** (new in CLI 0.1.26) sets who the agent belongs to. On
+  `create`/`test`, omitting it defaults to `org` (the historical shape); on `update`, omitting
+  it **leaves the existing visibility alone** — the CLI only sends the key when you pass the
+  flag, matching the API's own "omitted = don't touch" contract. `agent show`/`list` print
+  `visibility`, and `show` prints an `Owner:` line for a `personal` agent. See
+  [manifest-tools.md](manifest-tools.md) for what `visibility: personal` unlocks
+  (`tools.personal_connectors`) and the ownership model.
 - `delete` archives the agent and keeps run history. It prompts on a TTY; `--yes` is required
   non-interactively.
 - `run` and `test` accept either `--input '<json>'` or `--input-file <path>`, never both. The
@@ -50,8 +57,15 @@ railcode agent run <agent> --input '{"k":"v"}' [--trace]
   input against the agent's input schema returns non-zero `422`. Automation must inspect the
   run status, not only `$?`.
 
-Permissions: `list`/`show`/`pull` require agent-read; `run` also requires agent-invoke for the
-specific agent; `create`/`update`/`delete`/`test` require owner/admin authority.
+Permissions: `list`/`show`/`pull` only ever surface **org** agents plus the caller's own
+**personal** agents (someone else's personal agent 404s, admins included). For an **org**
+agent, `run` needs an invoke grant, and `update`/`delete`/`test`/schedule mutations are
+allowed for **the agent's own creator, or any org owner/admin** — not every member; creating
+one (or transitioning an existing agent to `org`) additionally needs `agent:create_org`. For
+a **personal** agent, invoke and manage (including schedules) are both **owner-only with no
+admin override** — even an org owner/admin can't reach someone else's; creating one needs the
+broadly-grantable `agent:create` capability instead. `agent:create` and `agent:create_org` are
+independent — holding one does not imply the other.
 
 ## Schedules
 
@@ -78,7 +92,9 @@ railcode agent schedule delete <agent> [--yes]
   zone.
 - `pause` and `resume` toggle `enabled`. `run-now` (alias `run`) executes synchronously and
   prints run detail. `delete` (alias `rm`) prompts unless `--yes` is passed.
-- Every schedule mutation requires owner/admin authority.
+- Every schedule mutation follows the same manage-authority rule as `update`/`delete` above:
+  the agent's creator or an org owner/admin for an **org** agent; the owner alone, with no
+  admin override, for a **personal** agent.
 
 ## Related Commands
 

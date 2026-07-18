@@ -1,7 +1,7 @@
 ---
 name: create-railcode-agent
-description: Build, test, publish, invoke, schedule, and update Railcode managed agents with the Railcode CLI. Use when creating an org-scoped managed agent, editing an agent JSON manifest, running a draft or saved agent, investigating an agent run, or managing its cron schedule. Do not use for static Railcode apps or general organization administration.
-version: 0.1.1
+description: Build, test, publish, invoke, schedule, and update Railcode managed agents with the Railcode CLI. Use when creating an org-scoped managed agent, editing an agent JSON manifest, running a draft or saved agent, investigating an agent run, or managing its cron schedule, or when the agent should own personal connectors (Gmail, Slack, ...) on behalf of a single owner. Do not use for static Railcode apps or general organization administration.
+version: 0.1.2
 ---
 
 # Create Railcode Agent
@@ -20,11 +20,11 @@ npm view railcode version
 
 If the skill changes, re-read this file from the top. If npm is unreachable, state that the
 latest version could not be verified and do not claim this guidance is current. This version
-was checked against the published **Railcode CLI 0.1.23**. The
+was checked against the published **Railcode CLI 0.1.26**. The
 [manifest tools reference](references/manifest-tools.md) reflects the backend `tools.*` schema
-as of 2026-07-16 (adds `app_data_write` — write access to another app's KV + file publish); the
-CLI itself has no manifest schema of its own, so that reference is versioned against the
-backend, not the CLI package.
+as of 2026-07-17 (adds `personal_connectors` — an agent's owner's own connected third-party
+accounts, gated to `visibility: personal`); the CLI itself has no manifest schema of its own,
+so that reference is versioned against the backend, not the CLI package.
 
 ## Build Workflow
 
@@ -36,7 +36,12 @@ Clarify only choices that materially change its definition:
 - the input it accepts and whether an input schema is required;
 - the model and tools it needs;
 - whether it runs on demand, from an app, or on a schedule;
-- what real systems, data, spend, or side effects a test may touch.
+- what real systems, data, spend, or side effects a test may touch;
+- **its visibility** — `org` (the default: shared, invokable by anyone with an invoke
+  grant, managed by its creator or any admin) or `personal` (owned and invoked by its
+  creator alone, admins included — no grant makes it shared, and it cannot later become
+  `org`). Pick `personal` only when the agent needs `tools.personal_connectors` (its
+  owner's own Gmail/Slack/etc.) or should otherwise be usable by exactly one person.
 
 Use the narrowest useful tool set and explicit instructions. Do not invent tool identifiers,
 provider names, or manifest fields; managed-agent manifests are server-defined JSON. See
@@ -84,11 +89,20 @@ silently omitted from a test run's tool list (see
 
 ```bash
 railcode agent create --file agent.json
+railcode agent create --file agent.json --visibility personal
 railcode agent update <agent> --file agent.json
 ```
 
 `update` replaces the stored manifest. Preserve fields intentionally by starting from
 `railcode agent pull`, and read all ratification warnings before considering the change done.
+
+`--visibility <org|personal>` on `create`/`update`/`test` sets or changes who the agent
+belongs to. Omit it on `create`/`test` for the default `org`; omit it on `update` to leave
+the existing visibility alone (never pass it just to be explicit — an omitted flag and an
+explicit `org` are different requests server-side). Creating/transitioning to `personal`
+needs the `agent:create` capability; `org` needs `agent:create_org` — holding one does not
+imply the other. `personal -> org` is rejected outright; `org -> personal` is allowed but
+does not retroactively change past shared runs/writes.
 
 ### 5. Verify the saved agent
 
@@ -116,9 +130,16 @@ mutation. `run-now` executes synchronously against real services.
 
 ## Permissions and Boundaries
 
-- `list`, `show`, and `pull` require agent-read access.
-- `run` also requires an invoke grant for that agent.
-- `create`, `update`, `delete`, `test`, and schedule mutations require owner/admin authority.
+- `list`, `show`, and `pull` only ever return **org** agents plus the caller's **own**
+  personal agents — someone else's personal agent is invisible (a 404, never a 403, to
+  avoid confirming it exists), admins included.
+- For an **org** agent: `run` needs an invoke grant for that agent; `update`/`delete`/`test`/
+  schedule mutations are allowed for **the agent's own creator, or any org owner/admin** — not
+  every member. Creating (or transitioning an existing agent to) `org` additionally needs the
+  `agent:create_org` capability.
+- For a **personal** agent: invoke and manage are both **owner-only, with no admin
+  override** — there is no break-glass, so even an org owner/admin can't reach someone else's.
+  Creating one needs the broadly-grantable `agent:create` capability, not owner/admin.
 - `delete` archives the agent while keeping run history and requires `--yes` outside a TTY.
 - Use `$create-railcode-app` when building a static app that invokes an agent through
   `agents.invoke(name, input)`. A privileged app manifest declares `agents: [name]`.
