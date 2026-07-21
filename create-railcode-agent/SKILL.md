@@ -1,7 +1,7 @@
 ---
 name: create-railcode-agent
 description: Build, test, publish, invoke, schedule, and update Railcode managed agents with the Railcode CLI. Use when creating an org-scoped managed agent, editing an agent manifest (JSON or YAML), running a draft or saved agent, investigating an agent run, managing its cron schedule, running an agent from Slack (@Railcode $agent), pairing an agent with a companion app, or when the agent should own personal connectors (Gmail, Slack, ...) on behalf of a single owner. Do not use for static Railcode apps, in-app LLM tool loops (llm.generate({ tools }) — see create-railcode-app), or general organization administration.
-version: 0.1.8
+version: 0.1.9
 ---
 
 # Create Railcode Agent
@@ -238,8 +238,9 @@ in `$create-railcode-app` → "Limitations"):
   data-change or inbound-webhook triggers.
 - **Invoke other agents.** There is no agent→agent tool; compose pipelines through an app
   or an external caller instead.
-- **Write to external databases.** SQL connections are read-only; writes go to app KV
-  (`app_data_write`) or the agent's own `agent_kv`.
+- **Use custom MCP personal connectors.** A user-added by-URL MCP connector
+  (`custom_<slug>`) works for its owner and for apps, but is **not declarable in an agent
+  manifest** — ratification checks the static registry. Bundled toolkits only.
 - **Keep sandbox state.** The sandbox filesystem is per-run; anything worth keeping must
   be published (`publish_artifact_to_app`) or written to KV before the run ends.
 
