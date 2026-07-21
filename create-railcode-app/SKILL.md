@@ -1,7 +1,7 @@
 ---
 name: create-railcode-app
 description: Build, modify, debug, test, and deploy Railcode static apps end-to-end. Use when creating a Railcode app from an idea, scaffolding with the Railcode CLI, wiring the zero-config SDK globals, explaining Railcode auth/data "magic", testing with railcode dev, declaring app authority, understanding app access, or deploying an app. Do not use for managed-agent authoring or general organization administration.
-version: 0.1.31
+version: 0.1.32
 ---
 
 # Create Railcode App
@@ -247,7 +247,11 @@ directly (in TypeScript, `declare` them or add an ambient `.d.ts`). The global S
   `gmail:send_email` lets the app send mail as the caller and nothing else. Tool slugs are
   lowercase and case-sensitive; copy the exact slug returned by `tools(toolkit)`. `call()`
   returns `409` if the caller hasn't connected that toolkit yet — render that as a "Connect
-  your account" prompt, not an error. (New in CLI/SDK 0.1.26.)
+  your account" prompt, not an error. (New in CLI/SDK 0.1.26.) Beyond the bundled toolkits,
+  a user can connect **any remote MCP server by URL** from the personal-connectors surface
+  (https-only; auth: none, pasted bearer token, or OAuth with discovery + DCR); it shows up
+  as a toolkit `custom_<slug>` marked `custom: true`, callable by an app on the owner's
+  behalf like any declared toolkit. (Custom MCP is new post-0.1.26.)
 
 The SDK also ships a live activity drawer that logs every call; toggle it with ``Ctrl+` ``
 (control + backtick). Org admins/owners **and the current app's owner** also get a small
@@ -292,7 +296,6 @@ Do not quietly build an approximation that can't work.
 | Custom backend code, or inbound endpoints (webhook receivers, public APIs) | Apps are static; nothing listens. Poll the source through a connector (interactively or on an agent schedule) instead of receiving events |
 | Public or customer-facing apps | Every viewer must be a signed-in org member — no anonymous access, no self-signup. Railcode apps are internal tools |
 | Real-time push (websockets, live presence/collaboration) | No push surface exists; UIs poll. LLM streaming is the only streaming response |
-| Writing to external databases | Postgres/BigQuery/Turso connections are read-only. The writable stores are app KV + files (and an agent's own KV) |
 | Relational features over KV (joins, transactions, aggregations) | KV queries filter/order/page only. Keep heavy data in a connected warehouse and read it via saved queries |
 | Receiving email, or sending from a custom address | `email.send()` is send-only with a platform-pinned sender and appended disclaimer |
 | Multimodal LLM input, embeddings, or vector search | The LLM gateway is text-in/text-out; there is no embeddings API. File understanding = a managed agent extracting in its sandbox |
@@ -322,7 +325,7 @@ Model data intentionally:
   `/`, contain `\`, use `.`/`..` traversal segments, or begin with a `users/` or `roles/`
   segment (both reserved server-side — an upload/read with such a name is rejected 400).
   Prefer `files.urls(names)` when a view needs many files.
-- SQL connections (Postgres/BigQuery/Turso) are admin-configured server-side and read-only. Always use placeholders plus params.
+- SQL connections (Postgres/BigQuery/Turso) are admin-configured server-side. Always use placeholders plus params. Write access depends on the engine and the connection credential's privileges — don't design an app around writing to an external database without confirming it.
 - LLM provider/model/API key are admin-configured server-side. Send `metadata` for audit and attribution. LLM tool loops run in the page with the app's existing SDK access — wire into a tool's `run` only what the model should be able to reach.
 - Email goes through the platform gateway server-side (fixed sender, appended disclaimer; apps never handle keys). It is **off by default** — needs an `email` grant or a ratified `email: true` manifest — and rate-limited per org; render `403`/`429`/`503` as normal app states, not retries.
 

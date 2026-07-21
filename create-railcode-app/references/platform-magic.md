@@ -333,6 +333,15 @@ Two different kinds of operation live on this one global, and the difference is 
   part of that toolkit, and `409` if the caller hasn't connected that toolkit yet — render the
   `409` as a "Connect your account" prompt, not an error state. In-house tool slugs are
   lowercase and case-sensitive; use the exact value returned by `tools(toolkit)`.
+- **Custom MCP servers (post-0.1.26).** Beyond the bundled registry, a user can connect
+  **any remote MCP server by pasting its URL** on the personal-connectors surface
+  (https-only and SSRF-guarded; auth: `none`, a pasted bearer `token`, or `oauth` via
+  discovery + dynamic client registration). The connection appears in `list()` as a
+  toolkit id `custom_<slug>` marked `custom: true` (with `display_name`/`url`), and an app
+  may declare and `call()` it on the owner's behalf like any bundled toolkit.
+  Disconnecting a custom connector **deletes** it — the connection row is the definition.
+  Custom connectors are **not** declarable in managed-agent manifests: agent ratification
+  checks connector ids against the static registry, which a `custom_*` id never matches.
 
 This is distinct from an admin-configured **service connector** (`connector()` /
 `serviceConnectors()`, above): a service connector is one org-wide credential every allowed
