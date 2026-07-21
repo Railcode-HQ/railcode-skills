@@ -1,7 +1,7 @@
 ---
 name: create-railcode-app
 description: Build, modify, debug, test, and deploy Railcode static apps end-to-end. Use when creating a Railcode app from an idea, scaffolding with the Railcode CLI, wiring the zero-config SDK globals, explaining Railcode auth/data "magic", testing with railcode dev, declaring app authority, understanding app access, or deploying an app. Do not use for managed-agent authoring or general organization administration.
-version: 0.1.29
+version: 0.1.30
 ---
 
 # Create Railcode App
@@ -50,9 +50,17 @@ start writing app code until steps 1–2 are done.
 
 ### 1. Ask before building
 
-First, ask the user a few short questions to scope the app. Ask only what changes the
-design or architecture, then pick sensible defaults for the rest and state them. Cover at
-least:
+First, ask the user a few short questions to scope the app — **all in one batch, as early
+as possible**. This is the moment the user is still present; questions dribbled out
+mid-build risk landing after they've stepped away. Ask only what changes the design or
+architecture, then pick sensible defaults for the rest and state them.
+
+Phrase every question for a **non-technical user who knows nothing of Railcode
+internals**: ask about intent, and let the answers determine the primitives without naming
+them. *"Should each user get their own private storage, or does everyone work on the same
+data?"* — not "db.shared or db.user?". *"Is this data already in a company database
+someone maintains?"* — not "saved query or direct SQL?". The bullets below are what **you**
+need to learn from the answers, not the words to use. Cover at least:
 
 - **What & who** — what should the app do, and who uses it? (drives access policy and
   whether data is per-user or shared)
@@ -264,7 +272,9 @@ sophistication** — a multi-step saved-query analytics assistant is fine in the
 
 The planes compose: keep the chat shell in the page and delegate heavy steps by calling
 `agents.invoke`/`agents.start` from a tool's `run` — see the delegation pattern in
-[App patterns](references/app-patterns.md).
+[App patterns](references/app-patterns.md). The inverse also holds: a managed agent often
+ships with a **companion app** that manages the files/records it relies on, renders its
+results, and gives it a one-click test trigger — see `$create-railcode-agent`.
 
 ## Visual Direction
 
