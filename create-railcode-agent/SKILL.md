@@ -1,7 +1,7 @@
 ---
 name: create-railcode-agent
 description: Build, test, publish, invoke, schedule, and update Railcode managed agents with the Railcode CLI. Use when creating an org-scoped managed agent, editing an agent manifest (JSON or YAML), running a draft or saved agent, investigating an agent run, managing its cron schedule, running an agent from Slack (@Railcode $agent), pairing an agent with a companion app, or when the agent should own personal connectors (Gmail, Slack, ...) on behalf of a single owner. Do not use for static Railcode apps, in-app LLM tool loops (llm.generate({ tools }) — see create-railcode-app), or general organization administration.
-version: 0.1.7
+version: 0.1.8
 ---
 
 # Create Railcode Agent
@@ -59,7 +59,11 @@ about intent and let the answers pick the primitives without naming them. *"Shou
 whole team be able to run this, or just you?"* — not "org or personal visibility?".
 *"Should it also run by itself every morning?"* — not "do you want a cron schedule?". The
 bullets below are what **you** need to learn from the answers, not the words to use.
-Clarify only choices that materially change the definition:
+
+If the request needs something agents can't do (scraping the open web, reacting to data
+changes, running continuously — see [Hard Limits](#hard-limits)), say so up front and
+propose the nearest supported shape. Clarify only choices that materially change the
+definition:
 
 - the job it owns and the output expected;
 - the input it accepts and whether an input schema is required;
@@ -219,6 +223,25 @@ records someone must manage, or people need a place to trigger it and see its ou
 Name the app after the agent (e.g. agent `report-extractor`, app
 `report-extractor-console`), declare the narrowest slugs on both sides, and build the app
 with `$create-railcode-app`.
+
+## Hard Limits
+
+What a managed agent **cannot** do, regardless of manifest (the full platform-wide list is
+in `$create-railcode-app` → "Limitations"):
+
+- **Reach the open web.** Sandbox egress is an allowlist (PyPI, npm, the presigned
+  download host with `app_files`); the `connector` tool reaches only ratified endpoints.
+  No scraping, no arbitrary APIs.
+- **Run long or continuously.** Runs are bounded — at most 100 steps / 300 s / the token
+  caps in `limits`. No daemons, no monitors; recurring work is a cron schedule.
+- **React to events.** Triggers are app/API call, cron, and Slack mention only — no
+  data-change or inbound-webhook triggers.
+- **Invoke other agents.** There is no agent→agent tool; compose pipelines through an app
+  or an external caller instead.
+- **Write to external databases.** SQL connections are read-only; writes go to app KV
+  (`app_data_write`) or the agent's own `agent_kv`.
+- **Keep sandbox state.** The sandbox filesystem is per-run; anything worth keeping must
+  be published (`publish_artifact_to_app`) or written to KV before the run ends.
 
 ## Permissions and Boundaries
 
