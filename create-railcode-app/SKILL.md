@@ -1,7 +1,7 @@
 ---
 name: create-railcode-app
 description: Build, modify, debug, test, and deploy Railcode static apps end-to-end. Use when creating a Railcode app from an idea, scaffolding with the Railcode CLI, wiring the zero-config SDK globals, explaining Railcode auth/data "magic", testing with railcode dev, declaring app authority, understanding app access, or deploying an app. Do not use for managed-agent authoring or general organization administration.
-version: 0.1.30
+version: 0.1.31
 ---
 
 # Create Railcode App
@@ -60,7 +60,12 @@ internals**: ask about intent, and let the answers determine the primitives with
 them. *"Should each user get their own private storage, or does everyone work on the same
 data?"* — not "db.shared or db.user?". *"Is this data already in a company database
 someone maintains?"* — not "saved query or direct SQL?". The bullets below are what **you**
-need to learn from the answers, not the words to use. Cover at least:
+need to learn from the answers, not the words to use.
+
+Before asking anything, check the request against **Limitations** below. If it needs
+something Railcode can't do (a scraper, a public site, a webhook receiver, …), say so
+plainly first and propose the nearest supported shape — don't build a broken
+approximation. Cover at least:
 
 - **What & who** — what should the app do, and who uses it? (drives access policy and
   whether data is per-user or shared)
@@ -275,6 +280,26 @@ The planes compose: keep the chat shell in the page and delegate heavy steps by 
 [App patterns](references/app-patterns.md). The inverse also holds: a managed agent often
 ships with a **companion app** that manages the files/records it relies on, renders its
 results, and gives it a one-click test trigger — see `$create-railcode-agent`.
+
+## Limitations — What Railcode Can't Do (Today)
+
+When a request hits a row below, say so up front and offer the nearest supported shape.
+Do not quietly build an approximation that can't work.
+
+| Not possible today | Why, and the nearest supported path |
+|---|---|
+| Scrapers, or calls to arbitrary websites/APIs | Apps are same-origin (the SDK reaches only `/_api`); agent sandbox egress is allowlisted (PyPI/npm). Reach a *specific* API via an admin-configured service connector, or the caller's own personal connector — including any MCP server by URL |
+| Custom backend code, or inbound endpoints (webhook receivers, public APIs) | Apps are static; nothing listens. Poll the source through a connector (interactively or on an agent schedule) instead of receiving events |
+| Public or customer-facing apps | Every viewer must be a signed-in org member — no anonymous access, no self-signup. Railcode apps are internal tools |
+| Real-time push (websockets, live presence/collaboration) | No push surface exists; UIs poll. LLM streaming is the only streaming response |
+| Writing to external databases | Postgres/BigQuery/Turso connections are read-only. The writable stores are app KV + files (and an agent's own KV) |
+| Relational features over KV (joins, transactions, aggregations) | KV queries filter/order/page only. Keep heavy data in a connected warehouse and read it via saved queries |
+| Receiving email, or sending from a custom address | `email.send()` is send-only with a platform-pinned sender and appended disclaimer |
+| Multimodal LLM input, embeddings, or vector search | The LLM gateway is text-in/text-out; there is no embeddings API. File understanding = a managed agent extracting in its sandbox |
+| Long-running or event-driven automation | Agent runs cap at 100 steps / 300 s; one cron per agent (null input); no data-change or inbound-webhook triggers (triggers are: app/API call, cron, Slack mention); agents can't invoke other agents |
+| Heavy compute (model training, media transcoding) | The sandbox is ephemeral per run with a 300 s ceiling; outputs must be published via `publish_artifact_to_app` |
+| Custom domains, native mobile apps, push notifications | Apps are responsive web apps served at `<app>.<org>.<base-domain>` |
+| Bring-your-own API keys inside an app | Apps never hold secrets. Integrations exist only as admin-configured service connectors or the caller's personal connectors |
 
 ## Visual Direction
 
