@@ -1,7 +1,7 @@
 ---
 name: create-railcode-agent
 description: Build, test, publish, invoke, schedule, and update Railcode managed agents with the Railcode CLI. Use when creating an org-scoped managed agent, editing an agent manifest (JSON or YAML), running a draft or saved agent, investigating an agent run, or managing its cron schedule, or when the agent should own personal connectors (Gmail, Slack, ...) on behalf of a single owner. Do not use for static Railcode apps, in-app LLM tool loops (llm.generate({ tools }) — see create-railcode-app), or general organization administration.
-version: 0.1.5
+version: 0.1.6
 ---
 
 # Create Railcode Agent
@@ -22,9 +22,31 @@ If the skill changes, re-read this file from the top. If npm is unreachable, sta
 latest version could not be verified and do not claim this guidance is current. This version
 was checked against the published **Railcode CLI 0.1.26**. The
 [manifest tools reference](references/manifest-tools.md) reflects the backend `tools.*` schema
-as of 2026-07-17 (adds `personal_connectors` — an agent's owner's own connected third-party
-accounts, gated to `visibility: personal`); the CLI itself has no manifest schema of its own,
-so that reference is versioned against the backend, not the CLI package.
+as of 2026-07-20 (adds `app_files` selective file loading and explicit read-scope selection;
+`code_exec` is now a **legacy** key — the sandbox is deployment infrastructure every agent
+gets); the CLI itself has no manifest schema of its own, so that reference is versioned
+against the backend, not the CLI package.
+
+## When To Use A Managed Agent vs The In-Page LLM
+
+A **managed agent** (this skill) runs server-side under its own ratified manifest, with a
+code sandbox and durable, auditable runs. The **in-page LLM** (`llm.generate`/`llm.stream`
+with `tools`, via `$create-railcode-app`) runs in the app viewer's tab with the app's SDK
+authority and dies with the tab. Pick the first matching row:
+
+| The AI feature… | Use |
+|---|---|
+| Summarizes / classifies / analyzes data the app already reads — user watching, done in seconds | **In-page LLM** |
+| Processes, parses, or analyzes an uploaded file (PDF, XLSX, …) | **Managed agent** (`app_files` + sandbox) |
+| Writes and runs code | **Managed agent** (sandbox) |
+| Is triggered outside the app (Slack, cron, API) | **Managed agent** |
+| Runs unattended, must survive tab close, or needs retries | **Managed agent** |
+| Has effects that must not depend on who's viewing (shared writes, send as the system) | **Managed agent** |
+| Needs a run history someone will audit or debug | **Managed agent** |
+
+The planes compose: the app keeps its chat shell in the page and delegates heavy steps by
+calling `agents.invoke`/`agents.start` from an LLM tool's `run` (the app manifest declares
+`agents: [name]`; this agent declares `app_files: [app]` to reach uploaded files).
 
 ## Build Workflow
 
@@ -159,10 +181,8 @@ fails every tick with a 422. See [example agents](references/examples.md) (`dail
 - Use `$create-railcode-app` when building a static app that invokes an agent through
   `agents.invoke(name, input)`. A privileged app manifest declares `agents: [name]`.
 - An app can also run its own agentic loop **in the page** with `llm.generate({ tools })` /
-  `llm.stream({ tools })` — user-defined tools executing as the signed-in viewer with the
-  app's SDK access, no managed agent involved. Prefer that (via `$create-railcode-app`)
-  for interactive in-app assistants; prefer a managed agent when the work should run
-  server-side under a ratified manifest, on a schedule, or from Slack.
+  `llm.stream({ tools })` — no managed agent involved. See **When To Use A Managed Agent
+  vs The In-Page LLM** at the top of this skill for the split.
 - Use `$manage-railcode-org` for members, roles/grants, apps/access, connections, service
   connectors, analytics, and organization logs.
 

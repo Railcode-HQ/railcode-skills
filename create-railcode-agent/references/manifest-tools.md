@@ -22,19 +22,35 @@ the manifest either — it's a sibling field the CLI sends alongside `manifest` 
 | `docs` | `string[]` (connector names) | `docs(connector)` — reads that connector's stored docs | connector must exist |
 | `email` | `bool \| {emails: string[], domains: string[]}` | `email(to, subject, html/text, cc, bcc)` — recipients restricted to the allowlist when one is set | `email` grant (org default: `*`) |
 | `adhoc_sql` | `string[]` (connection names) | `sql(connection, text, params)` — raw SQL, no firewall | `connector` grant; also a ratification **warning** ("prefer saved queries or read-only credentials") |
-| `app_data` | `string[]` (app slugs) — **read** | `app_kv_get`, `app_kv_query`, `app_kv_count` against the app's shared KV | `can_access_app` — same bar as opening the app |
+| `app_data` | `string[]` (app slugs) — KV **read** | `app_kv_get`, `app_kv_query`, `app_kv_count` against the app's KV (reads default to the `shared` scope and take an optional `scope` argument — see the read-scope note below) | `can_access_app` — same bar as opening the app |
 | `app_data_write` | `string[]` (app slugs) — **write**, new 2026-07-16 | `app_kv_set`, `app_kv_delete`, `publish_artifact_to_app(name, app)` | `can_manage_app` — the app's **owner, or an org admin, only**. Declaring it for an app you don't manage is a **hard save failure**, not a warning |
-| `code_exec` | `bool` | the sandbox's own tool set (bash + read/write/edit/grep/find/ls), reported dynamically by the sandbox at boot — one all-or-nothing authority | a ratification **warning** ("may run arbitrary code... can reach PyPI and npm") |
+| `app_files` | `string[]` (app slugs) — file **read**, new 2026-07-17; no wildcard | `search_app_files` (metadata only: name substring/prefix, exact content type, lexicographic paging; each result reports its scope) and `load_app_file(app, name)` — downloads the one object into the sandbox at `/workspace/in/apps/{app}/{name}` and returns the local path + metadata to the model, never bytes, object keys, or storage URLs. Re-loading the same path in one run is idempotent (first snapshot wins). Both take the optional `scope` argument (note below) | `can_access_app` — same bar as `app_data`, ratified normally |
+| `code_exec` | `bool` — **legacy** (since 2026-07-18) | accepted and **stripped** by the parser for compatibility; it grants nothing. The sandbox tool set (bash + read/write/edit/grep/find/ls) is deployment infrastructure now: when sandboxing is configured for the deployment, **every** agent has it, with no per-agent toggle. The sandbox carries no credentials or standing org access — tenant data moves in/out only through the explicit authorities above (`app_files` in, `app_data_write`'s `publish_artifact_to_app` out) | none (no longer an authority) |
 | `agent_kv` | `bool` | `agent_kv_get/set/query/delete` against the agent's own private, cross-run store | none beyond holding the agent itself |
 | `personal_connectors` | `string[]` — toolkit names or `toolkit:tool` pairs (e.g. `["gmail"]` or `["gmail:send_email"]`); in-house tool slugs are lowercase and case-sensitive, so copy discovery output exactly | `personal_tools(toolkit)` (list that toolkit's callable tools + schemas) and `personal_call(toolkit, tool, arguments)` (run one) | **`visibility: personal` only** — a save with this key on an `org` agent is a hard failure. No grant is checked at save time; execution runs against the agent's **owner's own** connected account (Gmail, Slack, ...) and 403s per-call if the owner hasn't connected that toolkit yet |
 
 A save that adds authority you don't hold (any grant-backed row above — `saved_queries`,
-`connectors`, `docs`, `email`, `adhoc_sql`, `app_data`, `app_data_write`) fails with the
-missing operations named — grant it via the org's roles/grants first
+`connectors`, `docs`, `email`, `adhoc_sql`, `app_data`, `app_data_write`, `app_files`)
+fails with the missing operations named — grant it via the org's roles/grants first
 (`$manage-railcode-org`), or drop it from the manifest. `personal_connectors` is the one
 exception: it has no grant to hold or ratify (there is no resource for a third party to
 be granted — the agent's owner's own connection is the whole authority), so the only save
 gate is `visibility: personal`.
+
+## Read scopes (new 2026-07-20)
+
+App KV and files hold three parallel scopes (`shared` / `user` / `role`). Every app READ
+tool — `app_kv_get`/`app_kv_query`/`app_kv_count`, `search_app_files`, `load_app_file` —
+takes an optional `scope` argument: `shared` (the default, app-wide), `user` (the
+principal's own), or `role:<role_id>`; results report the scope they were read from, so a
+key or filename existing in more than one scope stays unambiguous. A companion
+`app_scopes_list(app)` tool discovers which scopes the agent may read. The **principal** is
+a personal agent's owner; an org agent has no user principal, so it reads `shared` only.
+Scope selection is authorized exactly like a human caller (`can_access_app` + scope
+membership) with the admin cross-scope override **disabled** on the agent path — an agent
+can never reach another user's scope or a role its principal doesn't belong to. WRITES are
+unchanged and take no scope argument: one fixed scope per agent — `shared` for an org
+agent, the owner's `user` scope for a personal one.
 
 ## Draft/test caveats
 
@@ -61,9 +77,10 @@ Treat an untouched app/KV after `test` as inconclusive for `agent_kv`, but a `te
 own `app_kv_get`/output IS meaningful for `app_data_write` — just remember it isn't the
 app's real data.
 
-`publish_artifact_to_app` also needs `code_exec`: it publishes a file the agent
-already wrote to the sandbox's output directory, so there's nothing to publish
-without a sandbox to write it from.
+`publish_artifact_to_app` publishes a file the agent already wrote to the sandbox's
+output directory, so it needs a live sandbox — present whenever the deployment has
+sandboxing configured. (It formerly also required `code_exec`; that toggle is legacy
+and no longer gates anything.)
 
 ## `limits`
 
