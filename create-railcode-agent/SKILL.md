@@ -1,7 +1,7 @@
 ---
 name: create-railcode-agent
-description: Build, test, publish, invoke, schedule, and update Railcode managed agents with the Railcode CLI. Use when creating an org-scoped managed agent, editing an agent manifest (JSON or YAML), running a draft or saved agent, investigating an agent run, or managing its cron schedule, or when the agent should own personal connectors (Gmail, Slack, ...) on behalf of a single owner. Do not use for static Railcode apps, in-app LLM tool loops (llm.generate({ tools }) — see create-railcode-app), or general organization administration.
-version: 0.1.6
+description: Build, test, publish, invoke, schedule, and update Railcode managed agents with the Railcode CLI. Use when creating an org-scoped managed agent, editing an agent manifest (JSON or YAML), running a draft or saved agent, investigating an agent run, managing its cron schedule, running an agent from Slack (@Railcode $agent), pairing an agent with a companion app, or when the agent should own personal connectors (Gmail, Slack, ...) on behalf of a single owner. Do not use for static Railcode apps, in-app LLM tool loops (llm.generate({ tools }) — see create-railcode-app), or general organization administration.
+version: 0.1.7
 ---
 
 # Create Railcode Agent
@@ -52,12 +52,20 @@ calling `agents.invoke`/`agents.start` from an LLM tool's `run` (the app manifes
 
 ### 1. Scope the agent
 
-Clarify only choices that materially change its definition:
+Ask the scoping questions **first, all in one batch** — this is the moment the user is
+still present; questions dribbled out mid-build risk landing after they've stepped away.
+Phrase them for a **non-technical user who knows nothing of Railcode internals**: ask
+about intent and let the answers pick the primitives without naming them. *"Should the
+whole team be able to run this, or just you?"* — not "org or personal visibility?".
+*"Should it also run by itself every morning?"* — not "do you want a cron schedule?". The
+bullets below are what **you** need to learn from the answers, not the words to use.
+Clarify only choices that materially change the definition:
 
 - the job it owns and the output expected;
 - the input it accepts and whether an input schema is required;
 - the model and tools it needs;
-- whether it runs on demand, from an app, or on a schedule;
+- whether it runs on demand, from an app, on a schedule, or by Slack mention;
+- whether it needs a **companion app** (see [Companion Apps](#companion-apps));
 - what real systems, data, spend, or side effects a test may touch;
 - **its visibility** — `org` (the default: shared, invokable by anyone with an invoke
   grant, managed by its creator or any admin) or `personal` (owned and invoked by its
@@ -164,6 +172,53 @@ mutation. `run-now` executes synchronously against real services.
 A scheduled run passes **null** input — there is no per-schedule payload. An agent meant to run
 on a schedule should therefore **omit `input_schema`**: a `type: object` schema rejects null and
 fails every tick with a 422. See [example agents](references/examples.md) (`daily-metrics-report`).
+
+## Slack (On By Default)
+
+Once an org admin has connected the org's Slack workspace, **every active agent is
+reachable from Slack with no per-agent setup**. Members run one by mentioning the bot in a
+channel it has been invited to:
+
+```
+@Railcode $<agent-name> summarize this thread
+```
+
+The agent name takes a leading `$` and must be the **first token** after the mention (a
+bare name gets a usage hint instead of silently running something). What this means for
+agent design:
+
+- **Authority is unchanged.** The Slack caller is resolved by verified email to a live org
+  member and must hold the normal invoke grant — no match, no run. A `personal` agent is
+  therefore reachable on Slack only by its owner.
+- **Input arrives as `{ text: <message> }`** and is accepted for every agent regardless of
+  its declared `input_schema` — a schema constrains programmatic callers, it never blocks
+  a Slack mention.
+- **The platform posts the final reply** into the mentioning thread, on success and on
+  failure. Whatever the agent returns IS the Slack reply (a Slack-triggered run is told so
+  in its system prompt and to write Slack mrkdwn); it does not need the `slack` connector
+  to answer — that connector, when granted, is for interim progress updates only.
+
+So any agent a team will use conversationally should handle free-text input and produce a
+final answer that reads well as a Slack message.
+
+## Companion Apps
+
+An agent often needs a **companion app** — a small static app (`$create-railcode-app`)
+deployed alongside it. Reach for this pattern whenever the agent relies on files or
+records someone must manage, or people need a place to trigger it and see its output:
+
+- **Storage the agent relies on** — the app is the UI for uploading and managing the files
+  and records the agent reads: `files.upload()`/`db` in the app; `app_files: [<app-slug>]`
+  / `app_data: [<app-slug>]` in the agent's manifest.
+- **A surface for results** — the agent writes back via `app_data_write`
+  (`app_kv_set`, `publish_artifact_to_app`) and the app renders run outputs.
+- **An easy way to test and trigger** — a button wired to `agents.invoke(name, input)`
+  (app manifest: `agents: [<agent-name>]`) exercises the agent end-to-end far faster than
+  hand-crafting CLI runs, and doubles as the interactive production trigger.
+
+Name the app after the agent (e.g. agent `report-extractor`, app
+`report-extractor-console`), declare the narrowest slugs on both sides, and build the app
+with `$create-railcode-app`.
 
 ## Permissions and Boundaries
 
