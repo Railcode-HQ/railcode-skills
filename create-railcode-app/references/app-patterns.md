@@ -251,11 +251,56 @@ const result = await llm.generate(prompt, {
 // result.output holds the parsed JSON
 ```
 
-Streaming is text-only (`llm.stream()` rejects JSON output). A stream's `{ type: "error" }`
-event carries a classified `error` code (e.g. `provider_auth_error`, `provider_rate_limited`)
-and a `retryable` flag — check `retryable` before offering a retry rather than assuming every
-failure is transient. Render provider errors and token-cap failures as normal app states; do
-not retry indefinitely.
+Streaming is text-only without run-bearing tools (`llm.stream()` rejects JSON output
+client-side; on a tool loop the JSON value lands on the `done` event instead). A stream's
+`{ type: "error" }` event carries a classified `error` code (e.g. `provider_auth_error`,
+`provider_rate_limited`) and a `retryable` flag — check `retryable` before offering a retry
+rather than assuming every failure is transient. Render provider errors and token-cap
+failures as normal app states; do not retry indefinitely.
+
+Tool calling (post-0.1.26; needs a platform SDK that has it — see the "Tool calling"
+section of [platform-magic.md](platform-magic.md)):
+pass `tools` — `{ name, description, schema?, run?, summarize? }` objects wrapping the SDK
+calls the app already makes. All tools with `run` → the SDK runs the whole agentic loop in
+the page; none with `run` → single turn, requested calls returned unexecuted on `toolCalls`;
+mixing throws.
+
+```ts
+const lookupOrder = {
+  name: "lookup_order",
+  description: "Fetch one order by id from the app's KV. Returns the raw order record.",
+  schema: {
+    type: "object",
+    properties: { id: { type: "string" } },
+    required: ["id"],
+  },
+  run: ({ id }: { id: string }) => db.collection("orders").get(id),
+};
+
+const result = await llm.generate(question, {
+  system: "You are the order-support assistant.",
+  tools: [lookupOrder],
+  limits: { maxSteps: 6 },
+  metadata: { feature: "order-support" },
+});
+if (result.stopReason !== "end") showBudgetNotice(result.stopReason); // text may be empty
+renderSteps(result.steps);   // every executed call, raw results included
+renderAnswer(result.text);
+// continue the conversation: pass result.messages (+ the new user turn) as the next input
+
+for await (const event of llm.stream(question, { tools: [lookupOrder] })) {
+  if (event.type === "step") upsertToolCard(event.step); // emitted twice per call — upsert by step.id
+  else if (event.type === "text") appendText(event.text);
+  else if (event.type === "done") finish(event);         // event.text, .steps, .stopReason
+  else showLlmError(event);                              // classified error + retryable
+}
+```
+
+Keep tool `description`s prescriptive (what it's for AND how to use it well) — they are the
+model's only manual. Big `run` results are fine for the UI but reach the model only as
+`summarize(result)` (default JSON) clipped to ~6,000 chars, so summarize aggressively and
+tell the model to aggregate/limit inside the tool call. Cancellation via `signal` resolves
+normally with `stopReason: "aborted"` — branch on `stopReason`, not try/catch.
 
 Model selection is optional. Omit `provider`/`model` and the call uses the org default. To let
 the app target a specific model, enumerate the org's catalog with `llmProviders()`

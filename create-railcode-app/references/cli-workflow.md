@@ -342,6 +342,12 @@ An org can configure **many models across many providers**. In app code, calls r
 `opts.provider` (a provider name alone → that provider's default model) to `llm.generate()` /
 `llm.stream()`, or pass neither to use the org default marked in the listing.
 
+LLM **tool calling** (`opts.tools`, post-0.1.26) rides this same plane: the wire carries only
+each tool's `{ name, description, schema }` — `run`/`summarize` execute in the page — and
+under `railcode dev` the calls forward to the real instance like every other LLM call. But
+the dev server serves the **CLI's bundled SDK**, so local dev only gains the tool loop with
+the first CLI release after 0.1.26 (deployed apps get the platform-served SDK).
+
 ## Deploy An App With The CLI
 
 ```bash
@@ -432,7 +438,8 @@ run_as: app                 # or: user for pass-through apps
 saved_queries: [my_orders]  # saved queries the app may invoke
 connectors:                 # service-connector endpoints, per connector
   stripe: ["POST /v1/charges", "GET /v1/charges"]
-llm: true                   # LLM gateway access
+llm: true                   # LLM gateway access (incl. tool-calling loops; the SDK calls a
+                            # tool's run() makes still need their own declarations here)
 email: true                 # transactional email gateway access (email.send)
 adhoc_sql: [analytics]      # only when the user explicitly requested direct/ad-hoc SQL
 agents: [sales-digest]      # managed agents this app may invoke (agents.invoke)

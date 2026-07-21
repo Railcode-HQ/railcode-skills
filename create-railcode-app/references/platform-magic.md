@@ -376,7 +376,9 @@ const result = await llm.generate("Classify this customer.", {
 ```
 
 - Input is a prompt string **or** a `messages: [{ role, content }]` array. Options:
-  `provider`, `model`, `system`, `output`, `temperature`, `maxOutputTokens`, `metadata`.
+  `provider`, `model`, `system`, `output`, `tools`, `limits`, `signal`, `maxOutputTokens`,
+  `metadata`. *(`temperature` was removed end-to-end post-0.1.26 — current frontier models
+  reject non-default sampling, so it had become a dead knob. Don't send it.)*
 - `llmProviders()` lists the callable catalog as `{ provider, default, models: [{ model,
   default }] }` (the same data `railcode llm providers` prints). Pass a catalog `model` (its
   provider is implied) and/or a `provider` (alone → that provider's default model); omit both
@@ -385,8 +387,10 @@ const result = await llm.generate("Classify this customer.", {
   **strict mode**: every object must set `additionalProperties: false` and list **all** keys
   in `required` — make optional fields nullable (`{ type: ["string", "null"] }`) rather than
   omitting them.
-- `llm.stream(input, opts)` is an async iterator of `{ type: "text" }` / `{ type: "done" }` /
-  `{ type: "error" }` events; it is **text-only** and rejects JSON output client-side. An error
+- `llm.stream(input, opts)` is an async iterator of `{ type: "text" }` / `{ type: "step" }` /
+  `{ type: "done" }` / `{ type: "error" }` events; without run-bearing tools it is
+  **text-only** and rejects JSON output client-side (on a tool loop, the JSON value rides a
+  final non-streaming turn and lands on the `done` event). An error
   event's `error` field is a stable failure class (`provider_auth_error`,
   `provider_model_error`, `provider_rate_limited`, `provider_timeout`, `provider_bad_request`,
   `provider_error`) and `retryable` says whether repeating the same call could ever succeed —
@@ -397,6 +401,88 @@ const result = await llm.generate("Classify this customer.", {
 - Always send `metadata` for audit/attribution. Expect daily token caps, provider timeouts,
   and input limits enforced server-side; render those failures as normal app states and do
   not retry indefinitely — branch on `retryable` rather than guessing.
+
+### Tool calling — `llm.generate({ tools })` / `llm.stream({ tools })`
+
+*(New post-0.1.26 — merged to the platform 2026-07-20. Deployed apps get it from the
+platform-served SDK; `railcode dev` serves the CLI's bundled SDK, so local dev gains it with
+the first CLI release after 0.1.26.)*
+
+Both LLM calls accept `tools` — plain objects the app defines, wrapping anything it can
+already do. A tool is `{ name, description, schema?, run?, summarize? }`:
+
+- `description` is the model's only manual for the tool — say what it's for AND how to use
+  it well.
+- `schema` is JSON Schema for the args, validated **before** `run` (a bad arg is fed back to
+  the model as the tool result, never thrown into app code).
+- `run(args, ctx)` executes the tool; `ctx` is `{ signal, step }` — honor `signal` in long
+  tools. The return value IS the result: the raw value reaches the UI as `step.result`,
+  while the model sees only `summarize(result)` (default: JSON) clipped to ~6,000 chars.
+
+When **every** tool has `run`, the SDK executes the whole agentic loop: the model plans, the
+SDK validates args, runs the tool, feeds the clipped result back, and repeats until the
+model answers.
+
+```js
+const sql = {
+  name: "sql",
+  description:
+    "Run a read-only SQL query against the warehouse. SELECT only. You only see " +
+    "a short preview of results, so aggregate and LIMIT inside the query.",
+  schema: {
+    type: "object",
+    properties: { query: { type: "string" }, params: { type: "array" } },
+    required: ["query"],
+  },
+  run: ({ query, params }) => data("warehouse").runSQL(query, params),
+  summarize: (rows) => `${rows.length} row(s): ${JSON.stringify(rows.slice(0, 25))}`,
+};
+
+const result = await llm.generate("Which product had the most refunds?", {
+  system: "You are the analytics assistant.",
+  tools: [sql],
+  limits: { maxSteps: 6 },
+});
+result.text;       // the final answer
+result.steps;      // every executed tool call, in order, with raw results (render these)
+result.stopReason; // "end" | "max_steps" | "max_tool_calls" | "timeout" | "aborted"
+result.messages;   // full transcript — pass back as the next call's input to continue
+
+for await (const event of llm.stream("Break that down by region.", { tools: [sql] })) {
+  if (event.type === "step") upsertToolCard(event.step);   // twice per call; key by step.id
+  else if (event.type === "text") append(event.text);
+  else if (event.type === "done") finish(event);            // event.text, .steps, .stopReason
+}
+```
+
+The mechanics worth knowing:
+
+- **No new authority.** Tools execute in the page with the app's existing SDK access; every
+  LLM turn rides the same audited `/_api` calls. The model can only reach what you wire into
+  a `run` function. The wire carries only `{ name, description, schema }` — `run` and
+  `summarize` never leave the page.
+- **The model never sees big results.** It sees `summarize(result)` (default: JSON) clipped
+  to ~6,000 chars; the raw return value stays on `step.result` for the UI. Failures — bad
+  args, a throwing `run`, an unknown tool — are fed back to the model as observations, never
+  thrown into app code.
+- **One generation per answer.** `llm.stream` plans through streaming turns: text streams
+  live as the model writes it (including any preamble before a tool call); tool calls are
+  reassembled server-side and arrive complete (never token-streamed). Each executed call
+  emits a `{ type: "step", step }` event **twice** — status `"running"`, then `"ok"`/
+  `"error"` — with the same `step.id`, so upsert by id, don't append. The turn that ends the
+  loop is the turn whose text is the answer; the finished run (`text`, `output`, `steps`,
+  `messages`, `stopReason`) also lands on the `done` event.
+- **Bounded by default.** `limits: { maxSteps: 8, maxToolCalls: 30, timeoutMs: 120_000 }`
+  (planning turns / tool executions / wall clock); a step-budget line is injected into the
+  system prompt for you. `signal` cancels, and aborting resolves **normally** with
+  `stopReason: "aborted"` — branch on `stopReason`, not try/catch. Check `stopReason` before
+  rendering: `max_steps` and `timeout` can leave `text` empty.
+- **Run-less tools stay open.** Tools *without* `run` make the call a single turn: the
+  model's requested calls come back unexecuted on `result.toolCalls` (`{ id, name,
+  arguments }`, arguments already parsed), for apps that drive their own loop. On the stream
+  path they arrive on the `done` event's `toolCalls`. Mixing run and run-less tools throws.
+- **JSON output composes with the loop.** `{ output: { type: "json", schema } }` on a tool
+  loop rides a final non-streaming turn; on `llm.stream` the value lands on `done.output`.
 
 ## Email
 

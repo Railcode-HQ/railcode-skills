@@ -1,7 +1,7 @@
 ---
 name: create-railcode-app
 description: Build, modify, debug, test, and deploy Railcode static apps end-to-end. Use when creating a Railcode app from an idea, scaffolding with the Railcode CLI, wiring the zero-config SDK globals, explaining Railcode auth/data "magic", testing with railcode dev, declaring app authority, understanding app access, or deploying an app. Do not use for managed-agent authoring or general organization administration.
-version: 0.1.27
+version: 0.1.28
 ---
 
 # Create Railcode App
@@ -177,7 +177,19 @@ directly (in TypeScript, `declare` them or add an ambient `.d.ts`). The global S
   `{ provider, default, models: [{ model, default }] }`. Calls route by `(provider, model)`:
   pass `opts.model` (a catalog model name — its provider is implied) and/or `opts.provider`
   (alone → that provider's default model), or neither to use the org default. Apps never see
-  API keys. (Multi-model discovery new in CLI/SDK 0.1.15.)
+  API keys. (Multi-model discovery new in CLI/SDK 0.1.15.) Both calls also accept
+  `opts.tools` — user-defined `{ name, description, schema?, run?, summarize? }` objects
+  wrapping anything the app can already do. When **every** tool has a `run` handler, the
+  SDK executes the whole agentic loop in the page (the model plans, the SDK validates args,
+  runs the tool, feeds the summarized result back, repeats until the model answers) and the
+  result carries `steps`, `messages`, and `stopReason`; when **no** tool has `run`, the call
+  is a single turn and the model's requested calls come back unexecuted on `toolCalls`
+  (mixing run and run-less tools throws). Tools grant **no new authority** — the model can
+  only reach what you wire into a `run` function. See
+  [Platform magic](references/platform-magic.md) for the loop mechanics. (Tool calling is
+  new post-0.1.26: deployed apps get it from the platform-served SDK once the platform
+  deploy includes it; `railcode dev` serves the CLI's bundled SDK, so local dev gains it
+  with the first CLI release after 0.1.26.)
 - `data('name').runSQL(query, params)` runs SQL against a connection of any kind
   (dispatched on its stored engine server-side); the dialect-pinned `postgres('name')` /
   `bigquery('name')` / `turso('name')` only reach connections of that engine. Each takes
@@ -248,7 +260,7 @@ Model data intentionally:
   segment (both reserved server-side — an upload/read with such a name is rejected 400).
   Prefer `files.urls(names)` when a view needs many files.
 - SQL connections (Postgres/BigQuery/Turso) are admin-configured server-side and read-only. Always use placeholders plus params.
-- LLM provider/model/API key are admin-configured server-side. Send `metadata` for audit and attribution.
+- LLM provider/model/API key are admin-configured server-side. Send `metadata` for audit and attribution. LLM tool loops run in the page with the app's existing SDK access — wire into a tool's `run` only what the model should be able to reach.
 - Email goes through the platform gateway server-side (fixed sender, appended disclaimer; apps never handle keys). It is **off by default** — needs an `email` grant or a ratified `email: true` manifest — and rate-limited per org; render `403`/`429`/`503` as normal app states, not retries.
 
 ## Local Development
