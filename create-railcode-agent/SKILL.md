@@ -1,7 +1,7 @@
 ---
 name: create-railcode-agent
-description: Build, test, publish, invoke, schedule, and update Railcode managed agents with the Railcode CLI. Use when creating an org-scoped managed agent, editing an agent manifest (JSON or YAML), running a draft or saved agent, investigating an agent run, or managing its cron schedule, or when the agent should own personal connectors (Gmail, Slack, ...) on behalf of a single owner. Do not use for static Railcode apps or general organization administration.
-version: 0.1.4
+description: Build, test, publish, invoke, schedule, and update Railcode managed agents with the Railcode CLI. Use when creating an org-scoped managed agent, editing an agent manifest (JSON or YAML), running a draft or saved agent, investigating an agent run, or managing its cron schedule, or when the agent should own personal connectors (Gmail, Slack, ...) on behalf of a single owner. Do not use for static Railcode apps, in-app LLM tool loops (llm.generate({ tools }) — see create-railcode-app), or general organization administration.
+version: 0.1.5
 ---
 
 # Create Railcode Agent
@@ -158,6 +158,11 @@ fails every tick with a 422. See [example agents](references/examples.md) (`dail
 - `delete` archives the agent while keeping run history and requires `--yes` outside a TTY.
 - Use `$create-railcode-app` when building a static app that invokes an agent through
   `agents.invoke(name, input)`. A privileged app manifest declares `agents: [name]`.
+- An app can also run its own agentic loop **in the page** with `llm.generate({ tools })` /
+  `llm.stream({ tools })` — user-defined tools executing as the signed-in viewer with the
+  app's SDK access, no managed agent involved. Prefer that (via `$create-railcode-app`)
+  for interactive in-app assistants; prefer a managed agent when the work should run
+  server-side under a ratified manifest, on a schedule, or from Slack.
 - Use `$manage-railcode-org` for members, roles/grants, apps/access, connections, service
   connectors, analytics, and organization logs.
 
