@@ -1,5 +1,5 @@
 # minimal-summarizer — the smallest agent that runs: model + system, no tools.
-# Agent input is free-form (input_schema was removed 2026-07-21) — the system prompt
+# Agent input is free-form — the system prompt
 # defines the input contract. The reference-annotated writeup lives in
 # ../references/examples.md.
 kind: agent

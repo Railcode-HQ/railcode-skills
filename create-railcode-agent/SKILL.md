@@ -1,7 +1,7 @@
 ---
 name: create-railcode-agent
-description: Build, test, publish, invoke, schedule, and update Railcode managed agents with the Railcode CLI. Use when creating an org-scoped managed agent, editing an agent manifest (JSON or YAML), running a draft or saved agent, investigating an agent run, managing its cron schedule, running an agent from Slack (@Railcode $agent), pairing an agent with a companion app, or when the agent should own personal connectors (Gmail, Slack, ...) on behalf of a single owner. Do not use for static Railcode apps, in-app LLM tool loops (llm.generate({ tools }) — see create-railcode-app), or general organization administration.
-version: 0.1.12
+description: Build, test, publish, invoke, schedule, and update Railcode managed agents with the Railcode CLI. Use when creating an organization or personal managed agent, editing an agent manifest (JSON or YAML), running a draft or saved agent, investigating a run, managing its cron schedule, running it from Slack (@Railcode $agent), pairing it with a companion app, processing files in its sandbox, or using personal connectors (Gmail, Slack, ...) on behalf of one owner. Do not use for static Railcode apps, in-app LLM tool loops (llm.generate({ tools }) — see create-railcode-app), or general organization administration.
+version: 0.1.18
 ---
 
 # Create Railcode Agent
@@ -20,13 +20,55 @@ npm view railcode version
 
 If the skill changes, re-read this file from the top. If npm is unreachable, state that the
 latest version could not be verified and do not claim this guidance is current. This version
-was checked against the published **Railcode CLI 0.1.27**. The
-[manifest tools reference](references/manifest-tools.md) reflects the backend `tools.*` schema
-as of 2026-07-21 (**`input_schema` removed** — agent input is free-form now; **run limits
-raised** — new defaults/maxima; `app_files` selective file loading; explicit read-scope
-selection; `code_exec` legacy — the sandbox is deployment infrastructure every agent gets);
-the CLI itself has no manifest schema of its own, so that reference is versioned against
-the backend, not the CLI package.
+was checked against published **Railcode CLI 0.1.27**. Agent input is free-form; the `system`
+prompt defines its contract. The backend validates manifest tools and limits, so save-time
+validation is authoritative over this snapshot.
+
+## Map The Request To Railcode
+
+Use this table before authoring the manifest. If the request names an external product or
+data source, always check data connections/saved queries, service connectors, **and personal
+connectors** before deciding what is available; the detailed discovery commands are in the
+scoping step.
+
+**Hard file boundary:** whenever AI must **read, understand, extract, summarize, transform, or
+generate a file**, use a **managed agent** with `tools.app_files` and its sandbox. The companion
+app may upload, store, list, download, and display files, but its in-page `llm.generate()` /
+`llm.stream()` must never consume file contents, file URLs, file-derived payloads, or generate
+file artifacts as a substitute. Publish durable results back through `tools.app_data_write`.
+
+| What the user asks for | Use this Railcode feature |
+|---|---|
+| "Analyze company metrics/orders/customers from our database" | `tools.saved_queries` (default); use `tools.adhoc_sql` only when direct SQL is explicitly requested |
+| "Use our team's shared Stripe, CRM, or other SaaS account" | `tools.connectors` plus `tools.docs`; the org owns the service-connector credential |
+| "Use my Gmail, Slack, or another account I personally connected" | `tools.personal_connectors` on a **personal** agent; calls run as the agent owner |
+| "Connect my account to a product Railcode does not bundle" | A custom MCP personal connector works for an **app, not an agent**; offer a companion app, service connector, or data import path |
+| "Read records people manage in a Railcode app" | `tools.app_data`, usually with a companion app |
+| "Read, extract, summarize, transform, or generate a file with AI" | **Managed agent** with `tools.app_files` + sandbox; never the companion app's in-page LLM |
+| "Edit this Word document / DOCX and preserve it as a file" | **Managed agent + companion app**: the app stores/manages source and output files; declare `tools.app_files` to load the DOCX and `tools.app_data_write` to publish the edited document |
+| "Create or revise a PowerPoint / PPTX deck" | **Managed agent + companion app**: the app manages templates, inputs, and generated decks; use the sandbox to create/edit the PPTX and `publish_artifact_to_app` to return it |
+| "Create a PDF report, form, or document" | **Managed agent + companion app**: the app manages inputs and downloadable outputs; generate and verify the PDF in the sandbox, then publish it through `tools.app_data_write` |
+| "Analyze this Excel / XLSX workbook" | **Managed agent + companion app**: the app stores the workbook and results; load it through `tools.app_files`, parse/analyze it in the sandbox, and publish durable results through `tools.app_data_write` |
+| "Write results or publish an artifact back to an app" | `tools.app_data_write` (`app_kv_*` / `publish_artifact_to_app`) |
+| "Remember state between runs" | `tools.agent_kv`; use app storage instead when humans need to view or edit it |
+| "Parse files, produce documents, or run code" | Managed-agent sandbox plus `tools.app_files`; publish durable outputs back to an app with `tools.app_data_write` |
+| "Email a report from the system" | `tools.email`; use a Gmail **personal connector** when it must send from the owner's own mailbox |
+| "Run every morning, from Slack, or after a browser closes" | Managed agent plus a cron schedule or the built-in Slack invocation path |
+| "Give people a UI to upload inputs, trigger runs, or review results" | A companion Railcode app using `agents.invoke()` / `agents.start()` |
+| "Call an arbitrary website/API" | First look for service or bundled personal connectors; otherwise offer connector setup/import—a managed agent cannot fetch the open web or declare custom MCP toolkits |
+
+## Sandbox Capabilities
+
+Managed agents run in a per-run code sandbox when sandboxing is configured for the deployment;
+there is no manifest key or per-agent switch to request it. The sandbox provides shell and file
+tools so the agent can write and run code, inspect and transform files, and use appropriate
+libraries for tasks such as parsing Excel/CSV data, extracting or assembling PDFs, editing
+documents, unpacking archives, and producing generated artifacts.
+
+The sandbox is ephemeral and carries no credentials or standing org access. Bring tenant files
+in with `tools.app_files`, reach other systems only through explicit manifest authorities, and
+publish durable files or records back through `tools.app_data_write`. Anything left only in the
+sandbox disappears when the run ends.
 
 ## When To Use A Managed Agent vs The In-Page LLM
 
@@ -38,7 +80,7 @@ authority and dies with the tab. Pick the first matching row:
 | The AI feature… | Use |
 |---|---|
 | Summarizes / classifies / analyzes data the app already reads — user watching, done in seconds | **In-page LLM** |
-| Processes, parses, or analyzes an uploaded file (PDF, XLSX, …) | **Managed agent** (`app_files` + sandbox) |
+| Reads, understands, extracts, summarizes, transforms, or generates any file | **Managed agent** (`app_files` + sandbox); never the in-page LLM |
 | Writes and runs code | **Managed agent** (sandbox) |
 | Is triggered outside the app (Slack, cron, API) | **Managed agent** |
 | Runs unattended, must survive tab close, or needs retries | **Managed agent** |
@@ -66,9 +108,38 @@ changes, running continuously — see [Hard Limits](#hard-limits)), say so up fr
 propose the nearest supported shape. Clarify only choices that materially change the
 definition:
 
+**External source discovery is mandatory.** Whenever the user asks for an agent that reads,
+writes, syncs, searches, or acts on data from a named product or system ("X"), do not jump
+straight to a manifest or conclude that X is unsupported. Before choosing tools, inspect every
+Railcode integration plane available to the signed-in user:
+
+```bash
+railcode db list                       # database/data-source connections
+railcode query list                    # admin-published saved queries over those sources
+railcode connector list                # org service connectors
+railcode personal-connectors list      # per-user bundled and custom toolkits + connection status
+```
+
+Inspect any plausible match before authoring (`railcode connector docs <name>` and/or
+`railcode personal-connectors tools <toolkit>`), and copy exact connector names, endpoints,
+tool slugs, and schemas rather than guessing. Prefer saved queries over `adhoc_sql`. A bundled
+personal toolkit requires `visibility: personal` and runs as the agent owner; an org agent
+cannot declare personal connectors. If you cannot authenticate or reach the instance, ask what
+is configured and give the user these discovery commands rather than treating the failed check
+as evidence that no integration exists.
+
+If no suitable source exists, explain the gap and offer concrete paths: have an admin connect a
+database and publish a saved query; enable or create an org service connector for a shared
+credential/API; or connect a bundled personal toolkit and make the agent personal. Also mention
+a remote custom MCP personal connector when X provides one, but state the boundary clearly:
+`custom_<slug>` connectors are callable by Railcode **apps only**, not managed-agent manifests.
+For an agent workflow, offer a companion app that calls the custom MCP as its viewer, an
+admin-configured service connector, or importing the needed data into a connected database/app
+store the agent can read. If X exposes none of those supported surfaces, say Railcode cannot
+connect to it directly and ask which alternative source the user wants to use.
+
 - the job it owns and the output expected;
-- the input it accepts — free-form JSON or text; the `system` prompt is the input contract
-  (`input_schema` was removed 2026-07-21 and is now rejected as an unknown key);
+- the input it accepts — free-form JSON or text; the `system` prompt is the input contract;
 - the model and tools it needs;
 - whether it runs on demand, from an app, on a schedule, or by Slack mention;
 - whether it needs a **companion app** (see [Companion Apps](#companion-apps));
@@ -93,8 +164,9 @@ over this file.
 
 ### 2. Authenticate and inspect
 
-Run `railcode login` if the CLI has no usable saved token. Managed agents are org-scoped and
-do not use an app directory or `railcode.json`.
+Run `railcode login` if the CLI has no usable saved token. Agent commands use the selected
+organization context and work from any directory; agents can have `org` or `personal`
+visibility and do not use `railcode.json`.
 
 **Manifest file format.** `--file` (on `create`/`update`/`test`) reads the manifest as **JSON
 or YAML**; the CLI picks the parser by extension (`.yaml`/`.yml` → YAML, anything else →
@@ -132,10 +204,10 @@ needed authorization before running a side-effecting test.
 Do not rely only on the process exit code: a request that reached the runtime can exit 0 even
 when the run's printed status is failed. Check `Status:` or inspect `--json`.
 
-A draft test run has no persistent store: write tools from `app_data_write` and `agent_kv` are
-silently omitted from a test run's tool list (see
-[manifest tools reference](references/manifest-tools.md)). An untouched app or KV store after
-`test` is not evidence those tools are broken — verify writes with `create` + `run` instead.
+A draft test does not persist writes. `app_data_write` tools run against a per-run in-memory
+overlay, while `agent_kv` tools are omitted because no saved agent exists yet. An untouched
+store after `test` is expected; use `create` + `run` to verify persistence. See
+[manifest tools reference](references/manifest-tools.md#drafttest-caveats).
 
 ### 4. Publish or update
 
@@ -201,8 +273,8 @@ agent design:
 - **Authority is unchanged.** The Slack caller is resolved by verified email to a live org
   member and must hold the normal invoke grant — no match, no run. A `personal` agent is
   therefore reachable on Slack only by its owner.
-- **Input arrives as `{ text: <message> }`.** Agent input is free-form (structured input
-  validation was removed 2026-07-21), so any agent can be mentioned.
+- **Input arrives as `{ text: <message> }`.** Agent input is free-form, so any agent can be
+  mentioned; its `system` prompt must explain how to interpret that input.
 - **The platform posts the final reply** into the mentioning thread, on success and on
   failure. Whatever the agent returns IS the Slack reply (a Slack-triggered run is told so
   in its system prompt and to write Slack mrkdwn); it does not need the `slack` connector
@@ -277,5 +349,5 @@ Read [CLI reference](references/cli-workflow.md) for the exact agent commands, a
 schedule behavior, inputs, outputs, and failure semantics. Read
 [manifest tools reference](references/manifest-tools.md) for the `tools.*` vocabulary,
 what each grants, its permission gate, and `limits`. Read
-[example agents](references/examples.md) for worked, runnable manifests spanning the tool
-vocabulary — start from the closest one and adapt it instead of authoring from scratch.
+[example agents](references/examples.md) for worked, runnable manifests covering a minimal
+agent and a scheduled query-to-email workflow.

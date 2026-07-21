@@ -17,8 +17,8 @@ The CLI stores its selected instance, organization, and personal token at
 On a `401`, the saved token is cleared and the CLI asks for login again.
 
 `railcode login` uses browser authorization. `railcode login --setup-token <token>` is the
-one-time, non-browser onboarding path. Managed-agent commands are org-scoped and work from any
-directory after login.
+one-time, non-browser onboarding path. Managed-agent commands use the selected organization
+context and work from any directory; saved agents may be organization-visible or personal.
 
 ## Agents
 
@@ -44,8 +44,8 @@ railcode agent run <agent> --input '{"k":"v"}' [--trace]
   convert that pulled JSON yourself.
 - `create` and `update` print the agent name, UUID, visibility, and ratification warnings.
   `--json` prints the raw response. `update` replaces the stored manifest.
-- **`--visibility <org|personal>`** (new in CLI 0.1.26) sets who the agent belongs to. On
-  `create`/`test`, omitting it defaults to `org` (the historical shape); on `update`, omitting
+- **`--visibility <org|personal>`** sets who the agent belongs to. On `create`/`test`,
+  omitting it defaults to `org`; on `update`, omitting
   it **leaves the existing visibility alone** — the CLI only sends the key when you pass the
   flag, matching the API's own "omitted = don't touch" contract. `agent show`/`list` print
   `visibility`, and `show` prints an `Owner:` line for a `personal` agent. See
@@ -57,8 +57,8 @@ railcode agent run <agent> --input '{"k":"v"}' [--trace]
   default input is `null`. `test` runs an unsaved manifest; `run` invokes a saved agent.
 - Human output includes `Status:`, request ID, and output JSON. `--trace` appends a table of
   model/tool steps; `--json` prints the raw run detail.
-- A runtime failure can still exit 0 when the invocation request itself succeeded — input is
-  free-form (`input_schema` was removed 2026-07-21), so there is no input-validation `422`.
+- A runtime failure can still exit 0 when the invocation request itself succeeded. Input is
+  free-form, so there is no input-schema validation `422`.
   Automation must inspect the run status, not only `$?`.
 
 Permissions: `list`/`show`/`pull` only ever surface **org** agents plus the caller's own

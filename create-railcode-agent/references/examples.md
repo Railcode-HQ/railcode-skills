@@ -1,8 +1,7 @@
 # Example Agents
 
-Worked, runnable reference manifests — one per scenario — that together span the manifest
-`tools.*` vocabulary. When building a new agent, start from the closest example and adapt it
-rather than authoring from scratch.
+Worked, runnable reference manifests for a minimal text agent and a scheduled saved-query
+reporter. Start from the closest example and adapt it rather than authoring from scratch.
 
 Each example is a real YAML file under [`../examples/`](../examples). Author agents in YAML by
 default (see [SKILL.md](../SKILL.md), step 2) — these files double as the copy-and-adapt
@@ -11,7 +10,7 @@ starting point.
 ## Using an example
 
 ```bash
-railcode agent test   --file examples/<name>.yaml --input '{...}' --trace   # dry-run, no save
+railcode agent test   --file examples/<name>.yaml --input '{...}' --trace   # unsaved draft run
 railcode agent create --file examples/<name>.yaml                           # publish
 railcode agent run    <name> --input '{...}' --trace                        # invoke the saved agent
 ```
@@ -44,8 +43,8 @@ draft run touches no data and has no side effects beyond model spend.
 
 - **Scenario** — turn a blob of text into 3–5 bullet points.
 - **Demonstrates** — the required skeleton (`kind: agent`, `name`, `model`, `system`) and
-  the free-form input contract: input arrives unvalidated (`input_schema` was removed
-  2026-07-21), so the `system` prompt names the expected fields (`text`, optional
+  the free-form input contract: input arrives unvalidated, so the `system` prompt names the
+  expected fields (`text`, optional
   `max_bullets`) and says what to do when they're missing.
 - **Visibility** — `org` (the default); no `--visibility` flag needed.
 - **Non-defaults** — none. No `tools` (defaults to none) and no `limits` (defaults: 100
@@ -75,8 +74,7 @@ with no caller input.
   current keys (`max_tokens_total` / `max_tokens_turn`), and an attached **cron schedule** — a
   separate resource, not a manifest key.
 - **Null-input by design.** A cron run always passes `null` input, so the `system` prompt
-  tells the agent exactly what a run with no input should do. (Input is free-form for
-  every agent — `input_schema` was removed 2026-07-21.)
+  tells the agent exactly what a run with no input should do.
 - **Visibility** — `org` (the default).
 - **Non-defaults** — a tight `limits` block, plus the cron schedule below.
 - **Grants** — needs `daily_active_users` ratified as a saved query in the org, and the `email`

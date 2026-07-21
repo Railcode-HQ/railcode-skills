@@ -7,10 +7,9 @@ Confirm the live shape with `railcode agent pull` on an existing agent, and trea
 every "Unknown ... key" or save-time error as authoritative over this file.
 
 Top-level manifest keys: `kind`, `name`, `description`, `model`, `system`, `tools`,
-`limits`. Anything else is rejected — including **`input_schema`**, which was **removed
-2026-07-21**: agent input is free-form now (`input_json` reaches the model unvalidated; the
-`system` prompt is the input contract), stored manifests were migrated, and a manifest
-still declaring it fails as an unknown key. `triggers` (cron) is
+`limits`. Anything else is rejected. Agent input is free-form (`input_json` reaches the model
+unvalidated and the `system` prompt is the input contract); `input_schema` is not supported
+and fails as an unknown key. `triggers` (cron) is
 **not** a manifest key — schedules are a separate resource, see
 [cli-workflow.md](cli-workflow.md). `visibility` (`org` | `personal`) is **not** inside
 the manifest either — it's a sibling field the CLI sends alongside `manifest` via
@@ -26,11 +25,10 @@ the manifest either — it's a sibling field the CLI sends alongside `manifest` 
 | `email` | `bool \| {emails: string[], domains: string[]}` | `email(to, subject, html/text, cc, bcc)` — recipients restricted to the allowlist when one is set | `email` grant (org default: `*`) |
 | `adhoc_sql` | `string[]` (connection names) | `sql(connection, text, params)` — raw SQL, no firewall | `connector` grant; also a ratification **warning** ("prefer saved queries or read-only credentials") |
 | `app_data` | `string[]` (app slugs) — KV **read** | `app_kv_get`, `app_kv_query`, `app_kv_count` against the app's KV (reads default to the `shared` scope and take an optional `scope` argument — see the read-scope note below) | `can_access_app` — same bar as opening the app |
-| `app_data_write` | `string[]` (app slugs) — **write**, new 2026-07-16 | `app_kv_set`, `app_kv_delete`, `publish_artifact_to_app(name, app)` | `can_manage_app` — the app's **owner, or an org admin, only**. Declaring it for an app you don't manage is a **hard save failure**, not a warning |
-| `app_files` | `string[]` (app slugs) — file **read**, new 2026-07-17; no wildcard | `search_app_files` (metadata only: name substring/prefix, exact content type, lexicographic paging; each result reports its scope) and `load_app_file(app, name)` — downloads the one object into the sandbox at `/workspace/in/apps/{app}/{name}` and returns the local path + metadata to the model, never bytes, object keys, or storage URLs. Re-loading the same path in one run is idempotent (first snapshot wins). Both take the optional `scope` argument (note below) | `can_access_app` — same bar as `app_data`, ratified normally |
-| `code_exec` | `bool` — **legacy** (since 2026-07-18) | accepted and **stripped** by the parser for compatibility; it grants nothing. The sandbox tool set (bash + read/write/edit/grep/find/ls) is deployment infrastructure now: when sandboxing is configured for the deployment, **every** agent has it, with no per-agent toggle. The sandbox carries no credentials or standing org access — tenant data moves in/out only through the explicit authorities above (`app_files` in, `app_data_write`'s `publish_artifact_to_app` out) | none (no longer an authority) |
+| `app_data_write` | `string[]` (app slugs) — **write** | `app_kv_set`, `app_kv_delete`, `publish_artifact_to_app(name, app)` | `can_manage_app` — the app's **owner, or an org admin, only**. Declaring it for an app you don't manage is a **hard save failure**, not a warning |
+| `app_files` | `string[]` (app slugs) — file **read**; no wildcard | `search_app_files` (metadata only: name substring/prefix, exact content type, lexicographic paging; each result reports its scope) and `load_app_file(app, name)` — downloads the one object into the sandbox at `/workspace/in/apps/{app}/{name}` and returns the local path + metadata to the model, never bytes, object keys, or storage URLs. Re-loading the same path in one run is idempotent (first snapshot wins). Both take the optional `scope` argument (note below) | `can_access_app` — same bar as `app_data`, ratified normally |
 | `agent_kv` | `bool` | `agent_kv_get/set/query/delete` against the agent's own private, cross-run store | none beyond holding the agent itself |
-| `personal_connectors` | `string[]` — toolkit names or `toolkit:tool` pairs (e.g. `["gmail"]` or `["gmail:send_email"]`); in-house tool slugs are lowercase and case-sensitive, so copy discovery output exactly | `personal_tools(toolkit)` (list that toolkit's callable tools + schemas) and `personal_call(toolkit, tool, arguments)` (run one) | **`visibility: personal` only** — a save with this key on an `org` agent is a hard failure. No grant is checked at save time; execution runs against the agent's **owner's own** connected account (Gmail, Slack, ...) and 403s per-call if the owner hasn't connected that toolkit yet. **Bundled toolkits only**: a user-added by-URL MCP connector (`custom_<slug>`, new in 0.1.27) is not declarable — ratification existence-checks connector ids against the static registry, which a `custom_*` id never matches |
+| `personal_connectors` | `string[]` — toolkit names or `toolkit:tool` pairs (e.g. `["gmail"]` or `["gmail:send_email"]`); tool slugs are lowercase and case-sensitive, so copy discovery output exactly | `personal_tools(toolkit)` (list that toolkit's callable tools + schemas) and `personal_call(toolkit, tool, arguments)` (run one) | **`visibility: personal` only** — a save with this key on an `org` agent is a hard failure. Execution uses the agent owner's connected account and 403s if it is not connected. **Bundled toolkits only**: user-added `custom_<slug>` MCP connectors work in apps but are not declarable by managed agents |
 
 A save that adds authority you don't hold (any grant-backed row above — `saved_queries`,
 `connectors`, `docs`, `email`, `adhoc_sql`, `app_data`, `app_data_write`, `app_files`)
@@ -40,7 +38,17 @@ exception: it has no grant to hold or ratify (there is no resource for a third p
 be granted — the agent's owner's own connection is the whole authority), so the only save
 gate is `visibility: personal`.
 
-## Read scopes (new 2026-07-20)
+## Sandbox
+
+When sandboxing is configured for the deployment, every managed agent receives a per-run code
+sandbox with shell and file tools; there is no manifest authority or per-agent switch for it.
+Use the sandbox to write and run code, parse Excel/CSV files, inspect or assemble PDFs, edit
+documents, unpack archives, and create output artifacts. The sandbox has no credentials or
+standing org access: tenant data enters through explicit authorities such as `app_files`, and
+durable outputs leave through `app_data_write` (`publish_artifact_to_app` or app KV writes).
+The filesystem is ephemeral and disappears after the run.
+
+## Read scopes
 
 App KV and files hold three parallel scopes (`shared` / `user` / `role`). Every app READ
 tool — `app_kv_get`/`app_kv_query`/`app_kv_count`, `search_app_files`, `load_app_file` —
@@ -60,8 +68,8 @@ agent, the owner's `user` scope for a personal one.
 `railcode agent test` runs a draft with no `Agent` row, so persistent storage behaves
 differently under `test` than under a saved `run`:
 
-- **`app_data_write`'s write tools are offered and simulated, not persisted or omitted**
-  (changed from "omitted entirely" — as of 2026-07-17). `app_kv_set`/`app_kv_delete` are
+- **`app_data_write`'s write tools are offered and simulated, not persisted.**
+  `app_kv_set`/`app_kv_delete` are
   validated exactly as a saved run would (`can_manage_app`, and the target app must
   exist), then recorded into a per-run, in-memory overlay instead of the app's real
   store. Within that **same test run**, `app_kv_get` reads the overlay first (so a
@@ -73,7 +81,7 @@ differently under `test` than under a saved `run`:
   `railcode agent create` + `railcode agent run` instead of `test`.
 - `publish_artifact_to_app` is likewise validated and accepted on a draft, but marks
   nothing — a draft has no run-end artifact sink to publish through.
-- `agent_kv`'s tools remain fully **omitted** on a draft (unchanged): there is no
+- `agent_kv`'s tools are fully **omitted** on a draft: there is no
   `Agent` row yet to key that store on, so there's no overlay for it either.
 
 Treat an untouched app/KV after `test` as inconclusive for `agent_kv`, but a `test` run's
@@ -81,9 +89,8 @@ own `app_kv_get`/output IS meaningful for `app_data_write` — just remember it 
 app's real data.
 
 `publish_artifact_to_app` publishes a file the agent already wrote to the sandbox's
-output directory, so it needs a live sandbox — present whenever the deployment has
-sandboxing configured. (It formerly also required `code_exec`; that toggle is legacy
-and no longer gates anything.)
+output directory, so it needs a live sandbox, present whenever the deployment has
+sandboxing configured.
 
 ## `limits`
 
@@ -94,10 +101,6 @@ and no longer gates anything.)
 | `max_tool_calls` | 100 | 200 |
 | `max_tokens_total` | 50000 | 2000000 |
 | `max_tokens_turn` | 50000 | 200000 |
-
-*(Raised 2026-07-21 — `max_steps` and `timeout_seconds` now default to their maxima, and the
-token ceilings quadrupled/doubled: total 500k → 2M, turn 100k → 200k, turn default 8192 →
-50k.)*
 
 `max_tokens_total` is the cumulative run budget (input+output across all turns); `max_tokens_turn`
 is the per-turn output ceiling. `max_tokens` is accepted as a **legacy alias** for

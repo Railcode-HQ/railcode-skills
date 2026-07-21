@@ -9,7 +9,7 @@ validation on the **multi-tenant** platform.
 
 ```text
 railcode.json        { "app": "<slug>", "build": "npm run build", "dist": "dist" }
-package.json         React 19 + react-dom + Zustand 5; scripts: dev (vite), build (tsc && vite build)
+package.json         generated dependencies and dev/build scripts; treat it as source of truth
 index.html           loads <script src="/_api/sdk.js"></script> then /src/main.tsx
 tsconfig.json
 vite.config.ts       builds to dist/
@@ -83,13 +83,13 @@ KV/files/SQL by use case:
 Define collection names and key formats explicitly near the data layer:
 
 ```ts
-const TASKS = "tasks";
-const taskKey = (id: string) => id;                       // shared
-const userTaskKey = (userUuid: string, id: string) => `${userUuid}:${id}`;  // per-user
+type Task = { id: string; title: string; done: boolean };
+const sharedTasks = db.shared.collection<Task>("tasks");
+const myTasks = db.user.collection<Task>("tasks");
 ```
 
-If data is per-user, prefix by `me().user.uuid`, not by a display name. If data is shared,
-make conflict behavior obvious in the UI.
+Use `db.user` for per-user data and `db.role(uuid)` for role-owned data; do not emulate storage
+scopes with key prefixes. If data is shared, make conflict behavior obvious in the UI.
 
 ## KV Pattern
 
@@ -258,9 +258,8 @@ client-side; on a tool loop the JSON value lands on the `done` event instead). A
 rather than assuming every failure is transient. Render provider errors and token-cap
 failures as normal app states; do not retry indefinitely.
 
-Tool calling (new in CLI/SDK 0.1.27 — see the "Tool calling" section of
-[platform-magic.md](platform-magic.md)):
-pass `tools` — `{ name, description, schema?, run?, summarize? }` objects wrapping the SDK
+For tool calling, see [Platform magic](platform-magic.md#tool-calling--llmgenerate-tools--llmstream-tools).
+Pass `tools` — `{ name, description, schema?, run?, summarize? }` objects wrapping the SDK
 calls the app already makes. All tools with `run` → the SDK runs the whole agentic loop in
 the page; none with `run` → single turn, requested calls returned unexecuted on `toolCalls`;
 mixing throws.
@@ -364,7 +363,7 @@ const res = await email.send({
 when the send fails), and `503` (self-hosted or provider unconfigured). Render those as
 ordinary UI states; never retry in a loop. Do not put addresses the user hasn't consented to
 in `to`/`cc`/`bcc`. Under `railcode dev` this forwards to the org's real mailer (real email is
-sent) when logged in — new in CLI 0.1.19.
+sent) when logged in.
 
 ## Personal Connectors Pattern
 
@@ -442,8 +441,8 @@ RAILCODE_API_URL=https://api.apps.example.com RAILCODE_API_TOKEN=<token> railcod
 - Editing `dist/` directly is lost on the next build.
 - A new app defaults to **`organization`** access (every org member). Set it to
   `private`/`restricted` in the admin UI before sharing a sensitive app's URL.
-- Un-namespaced KV keys accidentally share private data across the app's users — prefix by
-  `me().user.uuid` for per-user state.
+- Using shared KV for private state leaks records across the app's users. Use `db.user`
+  instead of manually prefixing keys.
 - Using `==`/`>` style symbols in `where()` — the operators are the string names
   (`eq`/`gt`/…). Passing `{ size }` as an object to `page()` — it takes a numeric size.
 - String-concatenating SQL user input creates injection risk even though queries are

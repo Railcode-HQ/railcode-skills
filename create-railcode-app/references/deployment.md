@@ -17,12 +17,11 @@ when one is configured, and uploads the resolved output directory (which must co
 service.
 
 - **Which server** — resolved from `--api-url`, then `RAILCODE_API_URL`, then the saved CLI
-  config from `railcode login` (prompt default `http://api.127.0.0.1.nip.io`). There is no
+  config from `railcode login`, then `https://api.railcode.app`. There is no
   `deploy.apiUrl` manifest key.
 - **Auth** — the saved personal API token, or `RAILCODE_API_TOKEN` for non-interactive
   deploys. On a `401` the token is cleared and you're asked to `railcode login` again.
-- **Where it lands** — the app is created-or-resolved by slug in your saved org
-  (`POST /api/organizations/{org}/apps/{appUuid}/deploy`, a multipart upload). The first
+- **Where it lands** — the app is created-or-resolved by slug in your saved org. The first
   **successful** deploy is what creates the app; a failed first deploy leaves no phantom app.
 - **Private on deploy** — `railcode deploy --private` is a one-shot action that sets this
   app's access to `private` for that deploy only; it is never persisted (see App Access).
@@ -42,14 +41,9 @@ After upload the CLI prints the live URL: `http://<app>.<org>.<serving-domain>/`
 ## App Access
 
 A newly created app defaults to **`organization`** access (every member of the org may open
-it). The owner or an org admin sets access in the **admin UI**, with the `railcode apps`
-commands (use `$manage-railcode-org` for full administration), or via the access API (the one
-deploy-time exception is the one-shot `railcode deploy --private`, above):
-
-```text
-GET  /api/organizations/{org}/apps/{app}/access
-PUT  /api/organizations/{org}/apps/{app}/access      { "mode": "organization" | "private" | "restricted", ... }
-```
+it). The owner or an org admin sets access in the **admin UI** or with the `railcode apps`
+commands (use `$manage-railcode-org` for full administration). The deploy-time exception is
+the one-shot `railcode deploy --private` above.
 
 Modes:
 

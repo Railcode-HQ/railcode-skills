@@ -1,47 +1,56 @@
 ---
 name: create-railcode-app
 description: Build, modify, debug, test, and deploy Railcode static apps end-to-end. Use when creating a Railcode app from an idea, scaffolding with the Railcode CLI, wiring the zero-config SDK globals, explaining Railcode auth/data "magic", testing with railcode dev, declaring app authority, understanding app access, or deploying an app. Do not use for managed-agent authoring or general organization administration.
-version: 0.1.33
+version: 0.1.38
 ---
 
 # Create Railcode App
 
-## Step 0 — Update the skill and the CLI first (ALWAYS, before anything else)
+## Update First
 
-Before you scope an app, scaffold, run any `railcode` command, deploy, or even answer a
-Railcode/CLI question — **update both this skill and the CLI to latest.** Don't
-check-then-maybe-upgrade; just try to update both, every time this skill runs:
+Before answering a Railcode question or running a `railcode` command, update the Railcode
+skills and CLI, then verify npm's published version:
 
 ```bash
-npx skills add Railcode-HQ/railcode-skills     # install/update ALL Railcode skills to latest
-npm install -g railcode@latest                 # upgrade the CLI (or: pnpm add -g railcode@latest)
-railcode --version                             # confirm what you now have
-npm view railcode version                      # latest published (source of truth) — should match
+npx skills add Railcode-HQ/railcode-skills
+npm install -g railcode@latest
+railcode --version
+npm view railcode version
 ```
 
-Then honor what you find:
+If the skill changes, re-read this file from the top. If npm is unreachable, say so and do not
+claim the guidance is current. This version was checked against published **CLI 0.1.27**.
 
-- **If the skill updated itself**, its instructions may have just changed under you. The copy
-  in your context is now stale — **re-read this `SKILL.md` from the top** before acting on it.
-- **If `railcode --version` still trails `npm view railcode version`** after the upgrade, the
-  global install is shadowed (wrong package manager or PATH). Resolve that before continuing —
-  the CLI is a regular npm package, not a self-updating binary, so it only moves when upgraded.
-- **If npm or the network is unreachable**, you can't confirm you're current — say so plainly
-  in your handoff and proceed with the installed version rather than blocking, but don't claim
-  the skill or CLI reflects the latest.
+## Map The Request To Railcode
 
-This skill was last checked against the published **CLI 0.1.27** (the multi-tenant Railcode
-platform). It intentionally documents only commands relevant to building apps. Use
-`$create-railcode-agent` for managed-agent manifests/runs/schedules and
-`$manage-railcode-org` for organization administration. npm is the source of truth for the
-latest published CLI. If a documented command or flag is missing or errors unexpectedly,
-suspect version drift first and re-run the updates above.
+Use this table before choosing an architecture. If the request names an external product or
+data source, always check data connections/saved queries, service connectors, **and personal
+connectors** before deciding what is available; the detailed discovery commands are in step 1.
 
-That same `skills add Railcode-HQ/railcode-skills` command is also the first-time install —
-`add` upserts, so it installs what's missing and refreshes what's already there. Targeting the
-whole `Railcode-HQ/railcode-skills` repo (rather than a single `--skill`) keeps every Railcode
-skill current in one shot, and it works across Claude Code, Codex, Cursor, and other agents on
-the open agent-skills ecosystem.
+**Hard file boundary:** the app may upload, store, list, download, and display files with
+`files`, but any AI that must **read, understand, extract, summarize, transform, or generate a
+file** must be a **managed agent** with `app_files` and its sandbox. Never pass file contents,
+file URLs, or file-derived payloads to `llm.generate()` / `llm.stream()` as a substitute, and
+never use the in-page LLM to produce a file artifact. Use the app as the upload/results UI and
+delegate the file work through `agents.invoke()` / `agents.start()`.
+
+| What the user asks for | Use this Railcode feature |
+|---|---|
+| "Show company metrics/orders/customers from our database" | **Saved query** via `query()` (default); data connection + direct `data().runSQL()` only when explicitly requested |
+| "Let each user connect their Gmail, Slack, or another personal account" | **Personal connector** via `personalConnections`; declare only the needed `personal_connectors` tools |
+| "Connect my account to a product Railcode does not bundle" | **Custom MCP personal connector** by remote HTTPS URL, then call its `custom_<slug>` toolkit |
+| "Use our team's shared Stripe, CRM, or other SaaS account" | Org **service connector** via `connector().fetch()`; an admin owns the shared credential |
+| "Store app settings, drafts, approvals, or lightweight records" | App KV via `db.shared`, `db.user`, or `db.role()` according to ownership |
+| "Upload, store, download, or display files without AI processing" | Scoped app `files` |
+| "Read, extract, summarize, transform, or generate a file with AI" | **Managed agent** with `app_files` + sandbox; never `llm.generate()` / `llm.stream()` |
+| "Edit this Word document / DOCX and preserve it as a file" | **Managed agent + companion app**: the app stores/manages source and output files; the agent loads the DOCX with `app_files`, edits it in its sandbox, and publishes the result with `app_data_write` |
+| "Create or revise a PowerPoint / PPTX deck" | **Managed agent + companion app**: the app manages templates, inputs, and generated decks; the agent creates/edits the PPTX in its sandbox and publishes it back to the app |
+| "Create a PDF report, form, or document" | **Managed agent + companion app**: the app manages inputs and downloadable outputs; the agent generates and verifies the PDF in its sandbox, then publishes it back to the app |
+| "Analyze this Excel / XLSX workbook" | **Managed agent + companion app**: the app stores the workbook and results; the agent loads it with `app_files`, parses/analyzes it in its sandbox, and publishes durable results through `app_data_write` |
+| "Summarize or classify data while the user is watching" | In-page `llm.generate()` / `llm.stream()` with narrowly wired tools |
+| "Run in the background, on a schedule, from Slack, or after the tab closes" | **Managed agent** invoked with `agents`, often with this app as its companion UI |
+| "Send a system-owned transactional email" | Platform `email.send()`; use a Gmail **personal connector** instead when mail must come from each user's own account |
+| "Call an arbitrary website/API" | First look for a service or personal connector; otherwise offer admin connector setup or a custom MCP personal connector—apps cannot fetch the open web directly |
 
 ## Build Process (follow in order)
 
@@ -67,6 +76,34 @@ something Railcode can't do (a scraper, a public site, a webhook receiver, …),
 plainly first and propose the nearest supported shape — don't build a broken
 approximation. Cover at least:
 
+**External source discovery is mandatory.** Whenever the user asks for an app that reads,
+writes, syncs, searches, or acts on data from a named product or system ("X"), do not assume
+that a new integration or direct API call is needed. Before settling the architecture, inspect
+all three Railcode integration planes available to the signed-in user:
+
+```bash
+railcode db list                       # database/data-source connections
+railcode query list                    # admin-published saved queries over those sources
+railcode connector list                # org service connectors
+railcode personal-connectors list      # per-user bundled and custom toolkits + connection status
+```
+
+If a likely service or personal connector exists, inspect its actual surface before designing
+around it (`railcode connector docs <name>` or `railcode personal-connectors tools <toolkit>`).
+Never invent connector names, endpoints, tool slugs, or schemas. If you cannot authenticate or
+reach the Railcode instance, ask the user what is configured and present the discovery commands;
+do not treat an empty or unavailable local result as proof that X is unsupported.
+
+If nothing suitable is available, explain the gap and offer the relevant next choices instead
+of silently dropping the integration: have an admin connect the underlying database and publish
+a saved query; enable or create an org service connector for a shared credential/API; connect a
+bundled personal toolkit; or connect X's remote MCP server by URL as a custom personal connector
+(HTTPS; auth can be none, bearer token, or OAuth). Custom MCP personal connectors work for apps
+as `custom_<slug>` toolkits. If X has neither an accessible API/database nor a remote MCP server,
+say that Railcode cannot connect to it directly and ask which supported source the user wants to
+use. Make the options user-facing (who owns the account, whether access is shared, and any admin
+setup required), then let the user's choice determine the manifest authority.
+
 - **What & who** — what should the app do, and who uses it? (drives access policy and
   whether data is per-user or shared)
 - **Data** — what does it store or read? Per-user records or shared across the app's users?
@@ -76,8 +113,9 @@ approximation. Cover at least:
   `data('name').runSQL()` or a dialect-pinned `postgres`/`bigquery`/`turso` namespace
   with bound params. Any third-party SaaS API to reach via a `connector('name').fetch()`
   service connector? Any `llm` use? If AI is involved, also establish its **shape**: does it
-  process uploaded files, need to write/run code, get triggered outside the app (Slack,
-  schedule), or run unattended? Any yes → a **managed agent**, not the in-page LLM — see
+  read, generate, or otherwise process files, need to write/run code, get triggered outside
+  the app (Slack, schedule), or run unattended? Any yes → a **managed agent**, never the
+  in-page LLM — see
   **In-Page LLM vs Managed Agents** below.
 - **Design** — *"Should I use the default Railcode design system, or do you have a specific
   design direction?"* (drives step 2)
@@ -134,17 +172,15 @@ railcode deploy               # build (if configured) + upload to your org
 
 The CLI is the npm package `railcode` (`npm install -g railcode@latest`).
 
-The CLI drives **your app's** package manager, not a fixed one: it detects a `packageManager`
-field or a lockfile (pnpm/yarn/bun) and falls back to **`npm`** when there's no lockfile, so a
-fresh scaffold never forces pnpm onto the machine (new in CLI 0.1.17 — older CLIs hardcoded
-pnpm). Examples here use `npm`; substitute your own manager. Note npm's build is `npm run
-build`, not `npm build`.
+The CLI detects the app's package manager from `packageManager` or a lockfile and otherwise
+uses `npm`. Examples use `npm`; substitute the app's declared manager. The npm build command
+is `npm run build`.
 
 Use lowercase app names with digits and dashes only (a DNS label: `^[a-z0-9][a-z0-9-]{0,62}$`).
 `railcode init <app> [dir]` scaffolds a single self-contained app directory — `./<app>/` by
 default, or an existing directory you name (`railcode init my-app .` scaffolds into the
 current dir; non-empty is fine, but an existing `railcode.json` is refused without
-`--force`; the optional `[dir]` is new in CLI 0.1.27). There is no
+`--force`). There is no
 `apps/`/`app-bundles/` workspace split. The directory is the source of truth; the build
 output (`dist/` for the react template, or the directory itself for the no-build static
 template) is what `railcode deploy` uploads.
@@ -160,107 +196,32 @@ Load only the reference needed for the task:
 
 ## Implementation Rules
 
-Build the app as a static browser app. Do not add app-specific backend services, API keys, auth code, or hardcoded Railcode URLs unless the user explicitly asks for platform work. Browser code should call same-origin `/_api/*` through the Railcode SDK.
+Build a static browser app. Do not add app-specific backend services, credentials, auth code,
+or hardcoded Railcode URLs unless the user explicitly asks for platform work. Load
+`/_api/sdk.js` in `index.html` and call its same-origin globals directly; do not import a
+Railcode client package or create a custom SDK bootstrap.
 
-Load the SDK with a `<script src="/_api/sdk.js"></script>` tag in `index.html` (both starter
-templates do this). On load it attaches a fixed set of globals to `window` — there is no
-`loadRailcodeSdk()` bootstrap or `src/lib/railcode.ts` wrapper to import; call the globals
-directly (in TypeScript, `declare` them or add an ambient `.d.ts`). The global SDK surface is:
+Use the narrowest surface that fits:
 
-- `me()` → `{ user, app, org }`; `user` includes org-level `is_admin` plus assigned custom
-  roles as `{ uuid, name }`, and `is_app_owner` — whether the caller holds the running app's
-  owner grant (a UI hint; server-side authorization is unaffected). `appUsers()` → org members
-  with `is_admin` but no role memberships. `roles()` → every custom org role as
-  `{ uuid, name, description, is_member }` (`is_member` = whether the current caller belongs
-  to that role).
-- `designSystem()` → the org's design-system guidance (markdown string), same content as
-  `railcode design-system`.
-- `db.collection(name)` → per-app KV (`get`/`put`/`delete`/`list`). Start a query with
-  `query()` for pure ordering/paging, or with the collection helpers `where(...)` /
-  `prefix(...)`; query-only methods include `updatedSince`/`updatedBefore`/`orderBy`/
-  `page`/`first`/`count`. **Storage scopes:** `db.collection(...)` is app-wide (an alias for
-  `db.shared`); `db.user.collection(...)` is the caller's own private namespace;
-  `db.role(uuid).collection(...)` is one org role's shared namespace (the caller must be a
-  live member — owner/admin may reach any; get role UUIDs from `roles()`). The same
-  `(collection, key)` never collides across scopes, and the server enforces access.
-- `files` → `upload(name, data, contentType?)`, synchronous single-file `url(name)`,
-  batched async `urls(names)`, `list()`, and `delete(name)`. Use `await files.urls(names)`
-  for file-heavy views: it resolves up to 100 existing files with one authenticated request,
-  returns `{ items: [{ name, url, expires_in }], missing }`, and caches resolved URLs in
-  memory until shortly before expiry. Files carry the **same scopes** as KV:
-  `files.user.upload(...)`, `files.role(uuid).url(...)`, and `files.shared.*` — bare
-  `files.*` is an alias for `files.shared`. `railcode dev` emulates every scope on local
-  disk (including `urls`).
-- `llm` → `llm.generate(input, opts)` and the streaming `llm.stream(input, opts)`;
-  `llmProviders()` lists the org's configured providers as
-  `{ provider, default, models: [{ model, default }] }`. Calls route by `(provider, model)`:
-  pass `opts.model` (a catalog model name — its provider is implied) and/or `opts.provider`
-  (alone → that provider's default model), or neither to use the org default. Apps never see
-  API keys. (Multi-model discovery new in CLI/SDK 0.1.15.) Both calls also accept
-  `opts.tools` — user-defined `{ name, description, schema?, run?, summarize? }` objects
-  wrapping anything the app can already do. When **every** tool has a `run` handler, the
-  SDK executes the whole agentic loop in the page (the model plans, the SDK validates args,
-  runs the tool, feeds the summarized result back, repeats until the model answers) and the
-  result carries `steps`, `messages`, and `stopReason`; when **no** tool has `run`, the call
-  is a single turn and the model's requested calls come back unexecuted on `toolCalls`
-  (mixing run and run-less tools throws). Tools grant **no new authority** — the model can
-  only reach what you wire into a `run` function. See
-  [Platform magic](references/platform-magic.md) for the loop mechanics and
-  **In-Page LLM vs Managed Agents** below for when to use this at all. (Tool calling is
-  new in CLI/SDK 0.1.27, including under `railcode dev`. The react scaffold's ambient SDK
-  types don't declare `tools` yet — extend the ambient `LlmOptions` declaration if
-  TypeScript complains.)
-- `data('name').runSQL(query, params)` runs SQL against a connection of any kind
-  (dispatched on its stored engine server-side); the dialect-pinned `postgres('name')` /
-  `bigquery('name')` / `turso('name')` only reach connections of that engine. Each takes
-  `.runSQL(query, params)`, or `.runSQL(...)` alone for the connection named `default`.
-  `dataConnectors()` lists configured connections as `{ engine, name }` (engine is one of
-  `postgres`, `bigquery`, `turso`). Do not use direct/ad-hoc SQL unless the user
-  explicitly asks for it; saved queries are the default for database access.
-- `query(name, params?)` → invoke an admin-published **saved query** by name (returns the
-  same rows shape as `runSQL`); `savedQueries()` lists the callable signatures
-  (`{ name, description, params, version }` — never the SQL). Always use a saved query for
-  database access unless the user explicitly tells you to use direct/ad-hoc SQL. The server
-  injects `_ctx_*` binds from the signed-in viewer, so results can be row-scoped per caller
-  without the app passing any identity. (New in CLI/SDK 0.1.14.)
-- `connector('name').fetch(path, opts)` → call an admin-configured third-party SaaS API
-  through the server-side proxy (the credential never reaches the browser);
-  `serviceConnectors()` lists the connectors this app may call.
-- `email.send({ to, subject, html?, text?, cc?, bcc?, replyTo? })` → send transactional
-  email through the platform mail gateway; returns `{ id, status, requestId }`. The
-  platform owns the sender identity (a fixed `Railcode <…@mail-service.railcode.app>`
-  From) and appends a disclaimer — apps set only recipients/subject/body, never keys.
-  Governed and **off by default**: the org must grant `email` (or a `run_as: app`
-  manifest declares `email: true`). Per-org daily recipient cap; self-hosted or an
-  unconfigured provider returns `503`. (New in CLI/SDK 0.1.19.)
-- `agents.invoke(name, input?)` → invoke a managed agent available to the deployed app and
-  resolve with the FINISHED run (it polls a queued/running run to a terminal status for you).
-  Runs execute off the request now, so a long agent no longer risks a gateway timeout. A
-  `run_as: app` manifest declares allowed agents under `agents: [name]`; use
-  `$create-railcode-agent` to author or operate the managed agent itself. Use
-  `agents.start(name, input?)` (returns immediately with the queued run) plus
-  `agents.get(requestId)` to poll yourself — e.g. to show progress instead of blocking on
-  `invoke()`. (`start`/`get` and the `queued` status new in CLI/SDK 0.1.24.)
-- `personalConnections` → the **caller's own** connected third-party accounts (Gmail, Slack,
-  ...) — distinct from `connector()` (an org-admin-configured service
-  connector). `list()` and `connect(toolkit)` are identity ops (no manifest check beyond the
-  app only offering toolkits it declares); `tools(toolkit)` and `call(toolkit, tool, args)` are
-  bound by **this app's ratified `personal_connectors:` manifest declaration** — undeclared is
-  a `403` every time, even though the caller could do it by hand. A manifest declaring
-  `gmail:send_email` lets the app send mail as the caller and nothing else. Tool slugs are
-  lowercase and case-sensitive; copy the exact slug returned by `tools(toolkit)`. `call()`
-  returns `409` if the caller hasn't connected that toolkit yet — render that as a "Connect
-  your account" prompt, not an error. (New in CLI/SDK 0.1.26.) Beyond the bundled toolkits,
-  a user can connect **any remote MCP server by URL** from the personal-connectors surface
-  (https-only; auth: none, pasted bearer token, or OAuth with discovery + DCR); it shows up
-  as a toolkit `custom_<slug>` marked `custom: true`, callable by an app on the owner's
-  behalf like any declared toolkit. (Custom MCP is new in 0.1.27.)
+| Need | SDK surface |
+|---|---|
+| Identity, app members, roles, design guidance | `me()`, `appUsers()`, `roles()`, `designSystem()` |
+| Shared, private, or role-owned records | `db.shared`, `db.user`, `db.role(uuid)` |
+| Passive file upload, storage, download, or display | `files.shared`, `files.user`, `files.role(uuid)` |
+| Database reads | `query()` / `savedQueries()` by default; direct SQL only when explicitly requested |
+| Shared third-party account | `connector()` / `serviceConnectors()` |
+| Viewer's own third-party account | `personalConnections`; this includes remote custom MCP toolkits |
+| Short, watched, text/data AI | `llm.generate()` / `llm.stream()` with narrowly wired tools |
+| File AI, code execution, or durable/background AI | `agents.invoke()` / `agents.start()` and a managed agent |
+| System-owned transactional mail | `email.send()` |
 
-The SDK also ships a live activity drawer that logs every call; toggle it with ``Ctrl+` ``
-(control + backtick). Org admins/owners **and the current app's owner** also get a small
-floating button, bottom-right, that does the same thing — everyone else keeps the
-undocumented keyboard toggle only. It is present in production too, just dormant until
-opened.
+Tools passed to the in-page LLM add no authority; they expose only what their `run` handlers
+call. Never wire file content, file URLs, file-derived payloads, or file generation into an
+in-page tool. Delegate all AI file work to a managed agent with `app_files` and a sandbox.
+
+See [App patterns](references/app-patterns.md) for code, [Platform magic](references/platform-magic.md)
+for auth and scoping semantics, and [CLI workflow](references/cli-workflow.md) for manifest
+authority and exact commands.
 
 ## In-Page LLM vs Managed Agents (Cloud)
 
@@ -275,7 +236,7 @@ sophistication** — a multi-step saved-query analytics assistant is fine in the
 | The AI feature… | Use |
 |---|---|
 | Summarizes / classifies / analyzes data the app already reads — user watching, done in seconds | **In-page LLM** |
-| Processes, parses, or analyzes an uploaded file (PDF, XLSX, …) | **Managed agent** (`app_files` + sandbox) |
+| Reads, understands, extracts, summarizes, transforms, or generates any file | **Managed agent** (`app_files` + sandbox); never the in-page LLM |
 | Writes and runs code | **Managed agent** (sandbox) |
 | Is triggered outside the app (Slack, cron, API) | **Managed agent** |
 | Runs unattended, must survive tab close, or needs retries | **Managed agent** |
@@ -288,12 +249,12 @@ The planes compose: keep the chat shell in the page and delegate heavy steps by 
 ships with a **companion app** that manages the files/records it relies on, renders its
 results, and gives it a one-click test trigger — see `$create-railcode-agent`.
 
-## Limitations — What Railcode Can't Do (Today)
+## Limitations
 
 When a request hits a row below, say so up front and offer the nearest supported shape.
 Do not quietly build an approximation that can't work.
 
-| Not possible today | Why, and the nearest supported path |
+| Not possible | Why, and the nearest supported path |
 |---|---|
 | Scrapers, or calls to arbitrary websites/APIs | Apps are same-origin (the SDK reaches only `/_api`); agent sandbox egress is allowlisted (PyPI/npm). Reach a *specific* API via an admin-configured service connector, or the caller's own personal connector — including any MCP server by URL |
 | Custom backend code, or inbound endpoints (webhook receivers, public APIs) | Apps are static; nothing listens. Poll the source through a connector (interactively or on an agent schedule) instead of receiving events |
@@ -315,30 +276,18 @@ If the user opted into the Railcode design system, fetch it first with `railcode
 
 Apps must be responsive. Verify the main workflows work cleanly on desktop and mobile widths, with no overlapping text, clipped controls, or unusable tables.
 
-Model data intentionally:
-
-- KV is scoped per app. `db.shared` (the default `db.collection`) is shared by the app's allowed users; use `db.user` for the caller's private records (no manual user-key prefixing needed) and `db.role(uuid)` for data shared within one org role.
-- Use KV query builders for large or ordered lists instead of loading the whole collection.
-  `where()` and `prefix()` can start a query from a collection; pure ordering or paging starts
-  with `.query()` (for example `.query().orderBy("updatedAt", "desc").page(1, 50)`).
-  `orderBy`, `updatedSince`, `updatedBefore`, `page`, `first`, and `count` are query methods,
-  not direct collection methods. `where()` operators are the string names `eq`, `ne`, `gt`,
-  `gte`, `lt`, `lte`, and `in` (e.g. `.where("done", "eq", false)`), not symbols.
-- Files are scoped per app. Names may contain `/` for nested paths, but cannot start with
-  `/`, contain `\`, use `.`/`..` traversal segments, or begin with a `users/` or `roles/`
-  segment (both reserved server-side — an upload/read with such a name is rejected 400).
-  Prefer `files.urls(names)` when a view needs many files.
-- SQL connections (Postgres/BigQuery/Turso) are admin-configured server-side. Always use placeholders plus params. Write access depends on the engine and the connection credential's privileges — don't design an app around writing to an external database without confirming it.
-- LLM provider/model/API key are admin-configured server-side. Send `metadata` for audit and attribution. LLM tool loops run in the page with the app's existing SDK access — wire into a tool's `run` only what the model should be able to reach.
-- Email goes through the platform gateway server-side (fixed sender, appended disclaimer; apps never handle keys). It is **off by default** — needs an `email` grant or a ratified `email: true` manifest — and rate-limited per org; render `403`/`429`/`503` as normal app states, not retries.
+Keep data ownership explicit: use `db.user` / `files.user` for private data and `db.role(uuid)` /
+`files.role(uuid)` for role data; do not simulate scopes with key or path prefixes. Use query
+builders for large KV collections, bound parameters for SQL, and visible empty/error states for
+unconfigured integrations. Detailed patterns live in [App patterns](references/app-patterns.md).
 
 ## Local Development
 
-Run `railcode dev` from the app directory (any directory with a `railcode.json`). It serves the app at the first available local port starting at `http://127.0.0.1:7331`, runs the app's own dev server (Vite) and reverse-proxies it (HMR included) when there's a `package.json` `dev` script, serves the SDK at `/_api/sdk.js`, and stores local KV/files under `~/.railcode/dev/<instance>/<app>/` (namespaced per instance+org). Use the printed URL; it may be `7332` or higher when another dev server is already running. Useful flags: `--port <n>` (starting proxy port), `--asset-port <n>` (starting Vite port), `--reset` (wipe this app's local KV/files first).
-
-Local dev emulates identity (`me`), app users, KV, and files entirely on local disk. The design system, SQL (`data`/`postgres`/`bigquery`/`turso`), data connectors, saved queries (`query`/`savedQueries`), service connectors, LLM, and email (`email.send`) are **forwarded to the configured Railcode instance** when the CLI has a saved API token — so those use the org's real provider, quota, databases, and mail delivery (real spend, real data, real email). Not logged in: `dataConnectors()`/`serviceConnectors()`/`savedQueries()` return empty and `data().runSQL()`/`query()`/`llm`/`email.send()` return `503`. The startup banner prints which mode you're in. Even in local development, prefer `query()`/`savedQueries()` and do not use direct SQL unless explicitly instructed. Email forwarding under `railcode dev` is new in CLI 0.1.19 — earlier CLIs 404 on `email.send()` locally.
-
-CLI 0.1.23's dev emulator supports scoped file operations including batched `files.urls()`.
+Run `railcode dev` from the directory containing `railcode.json` and open the URL it prints.
+Identity, KV, and files are emulated locally; configured design, data, query, connector, LLM,
+personal-connector, and email calls are forwarded to the real instance when logged in. They can
+touch real data, incur spend, and cause side effects. Use `--reset` only when intentionally
+clearing this app's local KV/files. See [CLI workflow](references/cli-workflow.md#local-dev).
 
 ## Validation
 
@@ -362,28 +311,7 @@ Deploy a finished app from its app directory:
 railcode deploy
 ```
 
-`railcode deploy` reads `railcode.json` (`{ app, build?, dist? }`), runs the build command when one is configured, then uploads the output directory (which must contain a root `index.html`) over HTTP to the configured Railcode instance. It needs two things:
-
-- **Which server** — `--api-url`, then `RAILCODE_API_URL`, then the saved CLI config from `railcode login`. (There is no `deploy.apiUrl` manifest key in the multi-tenant CLI.)
-- **Auth** — it uses the saved API token, or reads `RAILCODE_API_TOKEN` for non-interactive runs. On a `401` the saved token is cleared and you're told to `railcode login` again.
-
-The app is **created-or-resolved by slug in your saved org**, then the live URL is printed —
-`http://<app>.<org>.<serving-domain>/` (e.g. `https://my-app.acme.railcode.dev/`).
-
-### Access
-
-A newly created app defaults to **`organization`** access — every member of your org can
-open it. Access is otherwise managed in the **admin UI** (or via
-`PUT /api/organizations/{org}/apps/{app}/access`); the one deploy-time exception is
-`railcode deploy --private`, a **one-shot** flag that sets the app private for that single
-deploy only — it is never persisted (`railcode init` no longer accepts or writes a private
-flag). The three modes are:
-
-- **`organization`** — every org member (the default).
-- **`private`** — owners only.
-- **`restricted`** — owners plus explicitly-granted members.
-
-Org admins/owners bypass per-app access (they can see and manage every app). If an app holds
-sensitive data, deploy it with `--private` (or set `private`/`restricted` in the admin
-console) before sharing the URL widely. For verification steps, read the
-[Deployment reference](references/deployment.md).
+Deploy reads `railcode.json`, builds when configured, uploads the resolved output, and prints
+the live URL. A new app defaults to organization-wide access; use `railcode deploy --private`
+for a private first deploy or set the intended policy explicitly afterward. Read
+[Deployment](references/deployment.md) for resolution, access modes, and verification.

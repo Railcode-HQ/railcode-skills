@@ -48,16 +48,8 @@ Install the CLI globally:
 npm install -g railcode@latest        # or: pnpm add -g railcode@latest
 ```
 
-The CLI stores config at `${RAILCODE_HOME:-~/.railcode}/config.json` (dir `0700`, file
-`0600`):
-
-```json
-{ "apiUrl": "...", "email": "...", "apiToken": "rc_...", "tokenPrefix": "rc_...",
-  "orgUuid": "...", "orgSlug": "...", "appHostStrategy": "two_label" }
-```
-
 API-URL resolution for every command: `--api-url` flag > `RAILCODE_API_URL` env > saved
-config > prompt (the prompt default is the dev URL `http://api.127.0.0.1.nip.io`). Set
+config > `https://api.railcode.app`. Set
 `RAILCODE_API_TOKEN` to override the saved token in CI. On a `401`, the saved token is
 cleared and you're told to `railcode login` again.
 
@@ -67,18 +59,18 @@ cleared and you're told to `railcode login` again.
 railcode login [--api-url <url>] [--paste|--no-browser]
 ```
 
-Login is **browser-based** (not an email/password prompt). There is **no "Server URL"
-prompt** (dropped in CLI 0.1.27): the API URL resolves non-interactively —
+Login is **browser-based** (not an email/password prompt). The API URL resolves
+non-interactively —
 `--api-url` > `RAILCODE_API_URL` > saved config > the default
 `https://api.railcode.app`. The CLI:
 
 1. Starts a localhost HTTP callback, prints the authorization link, and **auto-opens your
-   default browser** to it (new in CLI 0.1.14; paste the printed URL if it doesn't open).
+   default browser** to it; paste the printed URL if it doesn't open.
 2. The browser does normal dashboard auth and approves the CLI.
 3. The CLI exchanges the one-time code for a long-lived, revocable **personal API token**,
    resolves your organization, and saves everything to `~/.railcode/config.json`.
 
-Since CLI 0.1.27 there is also a **paste-the-code fallback**: the authorize page can
+There is also a **paste-the-code fallback**: the authorize page can
 display a one-time code with a copy button, and the CLI accepts either the localhost
 callback or a pasted code — whichever happens first. `--paste` (or `--no-browser`) skips
 the localhost server entirely, for SSH/headless machines.
@@ -103,16 +95,16 @@ Behavior:
 - Validates the app slug against `^[a-z0-9][a-z0-9-]{0,62}$` (a DNS label: lowercase
   letters, digits, dashes).
 - Scaffolds a **single self-contained directory** — `./<app>/` by default, or the optional
-  `[dir]` (new in CLI 0.1.27): `railcode init foobar .` scaffolds into the current
+  `[dir]`: `railcode init foobar .` scaffolds into the current
   directory, `railcode init foobar somedir` into `./somedir`. There is no
   `apps/`/`app-bundles/` workspace split, and no template repo is copied.
-- A non-empty target is fine (the 0.1.26-era empty-dir requirement is gone), but an
+- A non-empty target is fine, but an
   existing `railcode.json` is refused unless `--force`. The "Next:" hint prints
   `cd <dir>` only when files landed outside the cwd.
 
 Templates:
 
-- **`react`** (default) — a React 19 + Vite 7 + Zustand 5 + TypeScript starter that builds to
+- **`react`** (default) — a React, Vite, Zustand, and TypeScript starter that builds to
   `dist/`, with `railcode.json` `{ "app": "<slug>", "build": "npm run build", "dist": "dist" }`.
   Run `npm install` before `railcode dev`/`railcode deploy`.
 - **`static`** — a no-build app: `index.html` that loads `/_api/sdk.js` and demos
@@ -123,7 +115,7 @@ Treat the starter as functional scaffolding, not a style guide.
 
 The CLI runs **your app's** package manager for builds and dev — detected from a
 `packageManager` field or lockfile (pnpm/yarn/bun), defaulting to **`npm`** when there's no
-lockfile (new in CLI 0.1.17; older CLIs hardcoded pnpm). Examples use `npm`; use whatever your
+lockfile. Examples use `npm`; use whatever your
 app declares.
 
 ## Local Dev
@@ -149,11 +141,8 @@ slug). Behavior:
 `railcode dev` emulates the `/_api/*` data plane on local disk and proxies the rest to your
 real instance:
 
-- `GET /_api/sdk.js` — serves the bundled SDK.
-- `GET /_api/me` — synthetic identity `{ user, app, org }` (user `dev@localhost`).
-- `GET /_api/app-users` — a single synthetic member.
-- `GET /_api/config/design-system` — your org's **real** configured markdown when logged in;
-  empty otherwise (never errors).
+- The SDK and synthetic identity/app-member responses are served locally. Design-system
+  guidance comes from the real organization when logged in and is otherwise empty.
 - `/_api/kv/*` — JSON KV stored under `~/.railcode/dev/<instance>/<app>/kv.json`, queried by
   the same engine production uses.
 - `/_api/files*` — bytes under `~/.railcode/dev/<instance>/<app>/files/`, metadata in
@@ -161,12 +150,12 @@ real instance:
 - `/_api/connections`, `/_api/sql`, `/_api/queries` + `/_api/queries/{name}`,
   `/_api/llm/generate`, `/_api/llm/stream`, `/_api/llm/providers`, `/_api/email` +
   `/_api/email/send`, `/_api/service-connectors` + `/_api/service-connectors/request` —
-  **proxied to the real instance** with your saved token, invoked as the **signed-in user**
-  on the org/user-scoped plane (`/api/organizations/{org}/data/*`, `…/llm/*`, `…/email/*`) —
-  **not** a deployed app, so **no `railcode deploy` is needed first**. These hit the org's
+  **proxied to the real instance** with your saved token as the **signed-in user** — **not** a
+  deployed app, so **no `railcode deploy` is needed first**.
+  These hit the org's
   real provider, quota, databases, connectors, and mail — **real spend and real data**.
   Authority is your own grants (a deployed app is instead bound by its ratified manifest).
-  Email forwarding is new in CLI 0.1.19; earlier CLIs 404 on `email.send()` in dev.
+  These calls can incur real spend and side effects, including sending email.
 - `/_api/personal-connections*` (`personalConnections.list/connect/tools/call`) is **also
   proxied**, to the real `/api/personal-connections/*` user plane as you, the signed-in
   developer — but unlike every proxy above, it is **not** simply bound by your own grants.
@@ -175,7 +164,6 @@ real instance:
   requires the toolkit be declared, and `call()` resolves the tool's toolkit and refuses
   anything undeclared with a `403` — **before** the request ever reaches the user plane. An
   app with no `personal_connectors:` declared can call none of it locally, same as in prod.
-  (New in CLI 0.1.26.)
 
 When you're **not logged in**, the list endpoints (`connections`, `service-connectors`,
 `llm/providers`) degrade to empty and the call endpoints (`llm`, `sql`, `email/send`, a
@@ -210,9 +198,7 @@ railcode db query --file report.sql --connection analytics
 Turso) and runs ad-hoc read-only SQL from the terminal — the same connectors and SQL the
 in-app `dataConnectors()` / `data().runSQL()` use. Data connectors are **org-scoped**, so these
 one-shot commands **work straight after `railcode login`** — **no app and no `railcode.json`
-required**. They hit the app-less org data plane (`/api/organizations/{org}/data/*`) with your
-login token; run them from any directory. (This is new in CLI 0.1.13 — earlier versions required
-a deployed app.)
+required**. They use your login token and run from any directory.
 
 - `railcode db list` (aliases `ls`, `connections`) — prints each connector's `name` +
   `engine`; `--json` prints the raw array.
@@ -232,7 +218,7 @@ Note the two different `--params` shapes: `railcode db query` takes a positional
 
 ## Saved Queries
 
-*(New in CLI 0.1.14.)* A **saved query** is a named, versioned SQL template an org admin
+A **saved query** is a named, versioned SQL template an org admin
 publishes against one data connection. Members and apps invoke it **by name** with typed,
 named params — the grant-gated alternative to ad-hoc SQL, and the same queries the in-app
 `query('name', params)` / `savedQueries()` SDK globals use. Like `railcode db`, these are
@@ -275,7 +261,7 @@ railcode connector fetch "/v1/charges" --connector stripe --method POST --body "
 `serviceConnectors()` / `connector().fetch()` use. The connector holds the credential; you
 control only method/path/body. Service connectors are **org-scoped**, so — like `railcode db` —
 these commands **work straight after `railcode login`** with **no app or `railcode.json`
-required**, hitting the same `/api/organizations/{org}/data/*` plane.
+required**.
 
 - `railcode connector list` (aliases `ls`, `connectors`) — prints `name`, `auth_type`, and
   `allowed_methods` (plus a `description` column, and a `docs` column reading `api` /
@@ -293,8 +279,6 @@ required**, hitting the same `/api/organizations/{org}/data/*` plane.
   non-2xx upstream status is still printed, but the command exits non-zero.
 
 ## Call Personal Connectors
-
-*(New in CLI 0.1.26.)*
 
 ```bash
 railcode personal-connectors list                                    # toolkits this deployment brokers + your status
@@ -330,8 +314,6 @@ required.
 
 ## LLM Gateway
 
-*(New in CLI 0.1.15.)*
-
 ```bash
 railcode llm providers            # configured providers, each with its models
 railcode llm models               # flat list of every callable model
@@ -339,9 +321,8 @@ railcode llm providers --json     # raw provider array
 ```
 
 `railcode llm` shows the org's LLM gateway exactly as apps see it — the same catalog the
-in-app `llmProviders()` SDK global returns. Like `railcode db`/`connector`, it's **org-scoped**
-and works straight after `railcode login`, no app or `railcode.json` required
-(`GET /api/organizations/{org}/llm/providers`).
+in-app `llmProviders()` SDK global returns. Like `railcode db`/`connector`, it works after
+`railcode login`, with no app or `railcode.json` required.
 
 - `railcode llm providers` (alias `provider`) — one row per provider (`provider`, whether it's
   the org default, and its models joined in a cell with the default model marked).
@@ -354,10 +335,10 @@ An org can configure **many models across many providers**. In app code, calls r
 `opts.provider` (a provider name alone → that provider's default model) to `llm.generate()` /
 `llm.stream()`, or pass neither to use the org default marked in the listing.
 
-LLM **tool calling** (`opts.tools`, new in CLI/SDK 0.1.27) rides this same plane: the wire
+LLM **tool calling** (`opts.tools`) rides this same plane: the wire
 carries only each tool's `{ name, description, schema }` — `run`/`summarize` execute in the
 page — and under `railcode dev` the calls forward to the real instance like every other LLM
-call (the 0.1.27 CLI bundles the tool-loop SDK).
+call.
 
 ## Deploy An App With The CLI
 
@@ -370,8 +351,7 @@ Deploy behavior:
 - Requires a `railcode.json` with an `"app"` slug in the current directory.
 - Resolves the output directory, then runs a build command when needed (see resolution
   below), and uploads every file in the output dir (which must contain a root `index.html`)
-  to the org-scoped multipart deploy API
-  (`POST /api/organizations/{org}/apps/{appUuid}/deploy`).
+  to the selected organization.
 - Skips `.git`, `node_modules`, `.DS_Store`, and (at the app root) `railcode.json`,
   `package.json`, lockfiles (`package-lock.json` / `pnpm-lock.yaml` / `yarn.lock` /
   `bun.lockb`), `manifest.yaml`.
@@ -411,11 +391,6 @@ railcode apps access <app>                          # show the current mode + pe
 railcode apps set-access <app> --mode private       # or: organization | restricted
 railcode apps set-access <app> --mode restricted --members alice@x.io,bob@x.io
 ```
-```text
-GET  /api/organizations/{org}/apps/{app}/access
-PUT  /api/organizations/{org}/apps/{app}/access      { "mode": "...", ... }
-```
-
 Modes: `organization` (every org member, the default), `private` (owners only), `restricted`
 (owners plus explicitly-granted members). Org admins/owners bypass per-app access entirely.
 See [platform-magic.md](platform-magic.md) for the access model.
@@ -427,7 +402,7 @@ stays flipped). There is no persisted `private` key in `railcode.json`.
 
 ## App Manifest (Authority)
 
-*(New in CLI 0.1.15 — granular permissions.)* Always write a `manifest.yaml` beside
+Always write a `manifest.yaml` beside
 `railcode.json` for every app you build or materially change. It declares **which privileged
 operations an app performs and whose authority they run under**. It's separate from
 `railcode.json` (which stays `{ app, build?, dist?, dev? }`) and is uploaded on deploy.

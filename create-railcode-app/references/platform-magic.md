@@ -33,9 +33,8 @@ Railcode derives context from server-controlled request state, not from browser 
   identity comes from the `Host` header.
 - **Dashboard/API** (the control plane) uses **bearer tokens** — `Authorization: Bearer
   <token>` — with no cookies/CSRF.
-- **CLI** uses a long-lived, revocable **personal API token**. CLI/token-driven app routes
-  are explicit and org-scoped: `/api/organizations/{org}/apps/{app}/...` (deploy, SQL, LLM,
-  connections in `railcode dev`).
+- **CLI** uses a long-lived, revocable **personal API token** and the selected organization
+  context for deploys and local-development proxy calls.
 
 The "magic": frontend code just calls same-origin `/_api/*`, and the backend already knows
 both who is calling and which app/org is calling.
@@ -86,11 +85,11 @@ The globals are exactly: `me`, `appUsers`, `roles`, `designSystem`, `db`, `files
 `bigquery`, `turso`, `dataConnectors`, `query`, `savedQueries`, `connector`,
 `serviceConnectors`, `llm`, `llmProviders`, `email`, `agents`, `personalConnections`. Notes:
 
-- `me()` returns nested objects. Use **`me().user.uuid`** as the stable per-user key for
-  ownership/permissions/KV prefixes; `me().user.name`/`.email` are for display.
+- `me()` returns nested objects. Use **`me().user.uuid`** for stable ownership checks, not to
+  simulate storage scoping; use `db.user` / `files.user` for private data.
   `me().user.is_admin` is true for org owners and admins, `me().user.roles` is the
   caller's assigned custom roles as `{ uuid, name }[]`, and `me().user.is_app_owner` tells
-  the caller whether they hold the running app's owner grant *(new in CLI/SDK 0.1.25)*.
+  the caller whether they hold the running app's owner grant.
   These are UI hints only; server-side authorization remains authoritative.
 - SQL runs through the database namespaces: `data(name)` is engine-generic (dispatches on the
   connection's stored kind server-side); `postgres(name)` / `bigquery(name)` / `turso(name)`
@@ -101,24 +100,11 @@ The globals are exactly: `me`, `appUsers`, `roles`, `designSystem`, `db`, `files
   for you (`success`/`failed`/`cancelled`/`limit_exceeded`); runs execute off the request, so a
   long agent no longer risks a gateway timeout. `agents.start(name, input?)` returns
   immediately with the `queued` run instead, and `agents.get(requestId)` reads it back — use
-  the pair to show progress rather than block on `invoke()`. *(`start`/`get` new in CLI/SDK
-  0.1.24.)*
+  the pair to show progress rather than block on `invoke()`.
 
-The SDK also mounts a thin **Railcode top bar** on served apps (new in 0.1.27):
-"Railcode" (→ the org launcher) on the left, the app name centered, the viewer's name and a
-Log out control on the right — the logout posts same-origin `POST /_api/logout`, which
-clears the parent-scoped serving cookie. It is Shadow-DOM isolated (no CSS leakage either
-way), starts **collapsed** behind a top-edge tab, opens on click only, and while open
-pushes the page down by its height rather than overlaying — so don't design a competing
-fixed chrome element into the top edge, and don't build your own logout.
-
-The SDK also ships a live inspector drawer that logs every call (`db`, `files`, `llm`,
-`email`, `data`/`postgres`/`bigquery`/`turso`, `connector`, `personalConnections`, `me()`, `appUsers()`, `roles()`, `designSystem()`) with a pending → ok/error
-transition and timing. Toggle it with ``Ctrl+` `` (control + backtick); org admins/owners
-**and the current app's owner** (`me().user.is_app_owner`) also get a small floating button,
-bottom-right, for the same toggle (everyone else keeps only the keyboard shortcut). It is
-present in production too, just dormant until opened. Do not swallow SDK errors; surface
-useful error states in the app.
+The SDK provides platform navigation/logout chrome, so do not build a competing logout flow.
+It also provides a live activity inspector, toggled with ``Ctrl+` ``. Do not swallow SDK
+errors; surface useful error states in the app.
 
 ## Access Policies
 
@@ -133,8 +119,7 @@ An app's `access_mode` is one of:
 - **`restricted`** — owners plus explicitly-granted members.
 
 Org admins/owners **bypass** per-app access — they see and manage every app in the org.
-Access is read/set in the **admin UI** or via `GET`/`PUT
-/api/organizations/{org}/apps/{app}/access`.
+Access is read/set in the **admin UI** or with `railcode apps access` / `set-access`.
 
 `appUsers()` returns the app's org members (`{ uuid, name, email, is_admin }`) without custom
 role memberships; use it for assignee pickers, mentions, and display, not as an authorization
@@ -264,7 +249,7 @@ Rules:
 
 ## Saved Queries
 
-*(New in CLI/SDK 0.1.14.)* A **saved query** is a named, versioned SQL template an org
+A **saved query** is a named, versioned SQL template an org
 admin publishes against one data connection. Apps invoke it by name — the typed,
 grant-gated alternative to writing ad-hoc SQL in the app:
 
@@ -307,7 +292,7 @@ truncated at a size limit (`resp.truncated`).
 
 ## Personal Connectors
 
-*(New in CLI/SDK 0.1.26.)* A **personal connector** is the caller's **own** connected
+A **personal connector** is the caller's **own** connected
 third-party account (Gmail, Slack, ...) — the opposite ownership axis
 from a service connector. A service connector is one credential the *org* configures and
 every allowed caller shares; a personal connector is one connection each *individual* signs
@@ -341,7 +326,7 @@ Two different kinds of operation live on this one global, and the difference is 
   part of that toolkit, and `409` if the caller hasn't connected that toolkit yet — render the
   `409` as a "Connect your account" prompt, not an error state. In-house tool slugs are
   lowercase and case-sensitive; use the exact value returned by `tools(toolkit)`.
-- **Custom MCP servers (new in 0.1.27).** Beyond the bundled registry, a user can connect
+- **Custom MCP servers.** Beyond the bundled registry, a user can connect
   **any remote MCP server by pasting its URL** on the personal-connectors surface
   (https-only and SSRF-guarded; auth: `none`, a pasted bearer `token`, or `oauth` via
   discovery + dynamic client registration). The connection appears in `list()` as a
@@ -388,12 +373,11 @@ const result = await llm.generate("Classify this customer.", {
 
 - Input is a prompt string **or** a `messages: [{ role, content }]` array. Options:
   `provider`, `model`, `system`, `output`, `tools`, `limits`, `signal`, `maxOutputTokens`,
-  `metadata`. *(`temperature` was removed end-to-end in 0.1.27 — current frontier models
-  reject non-default sampling, so it had become a dead knob. Don't send it.)*
+  `metadata`. `temperature` is not supported.
 - `llmProviders()` lists the callable catalog as `{ provider, default, models: [{ model,
   default }] }` (the same data `railcode llm providers` prints). Pass a catalog `model` (its
   provider is implied) and/or a `provider` (alone → that provider's default model); omit both
-  for the org default. *(Multi-model discovery new in SDK 0.1.15.)*
+  for the org default.
 - `llm.generate()` supports `{ output: { type: "json", schema } }`. JSON schemas run in
   **strict mode**: every object must set `additionalProperties: false` and list **all** keys
   in `required` — make optional fields nullable (`{ type: ["string", "null"] }`) rather than
@@ -407,15 +391,11 @@ const result = await llm.generate("Classify this customer.", {
   `provider_error`) and `retryable` says whether repeating the same call could ever succeed —
   `false` means an org admin has to fix the provider config first, not a transient blip.
   `llm.generate()` failures carry the same classification in the thrown error's message.
-  *(New in CLI/SDK 0.1.24 — previously every provider failure flattened to one generic
-  message.)*
 - Always send `metadata` for audit/attribution. Expect daily token caps, provider timeouts,
   and input limits enforced server-side; render those failures as normal app states and do
   not retry indefinitely — branch on `retryable` rather than guessing.
 
 ### Tool calling — `llm.generate({ tools })` / `llm.stream({ tools })`
-
-*(New in CLI/SDK 0.1.27, including under `railcode dev`.)*
 
 Both LLM calls accept `tools` — plain objects the app defines, wrapping anything it can
 already do. A tool is `{ name, description, schema?, run?, summarize? }`:
@@ -528,9 +508,8 @@ const res = await email.send({
   even failed sends) → `429` when exhausted; suppressed (bounced/complained) recipients are
   rejected. Self-hosted or an unconfigured provider returns `503 email_unavailable`. Render
   all of these as normal app states — never retry loops.
-- Discovery: `GET /_api/email` reports `{ configured, from, dailyRemaining }` if you need to
-  gate UI, but the SDK surface apps call is just `email.send`.
-- *New in CLI/SDK 0.1.19.*
+- Use the SDK's email discovery surface when the UI must show availability or remaining quota;
+  send through `email.send`.
 
 ## Local Dev Bridge
 
@@ -545,8 +524,7 @@ const res = await email.send({
   `query()`/`savedQueries()`, `serviceConnectors()`, `connector().fetch()`, `llm`,
   `llmProviders()`, and `email.send()` **forward to the real instance** when the CLI has a
   saved token — real provider, quota, databases, connectors, and **mail delivery** (real
-  spend + data — `email.send()` sends actual email). Email forwarding is new in CLI 0.1.19;
-  earlier CLIs 404 on `email.send()` in dev.
+  spend + data — `email.send()` sends actual email).
 - Not logged in: `dataConnectors()`/`serviceConnectors()`/`savedQueries()` return empty and
   `data().runSQL()`/`query()`/`llm`/`email.send()`/`personalConnections.*` return `503`
   (never `401`). The startup banner says which mode you're in, so you don't have to fire a
@@ -555,8 +533,7 @@ const res = await email.send({
   signed-in developer — but it's the one proxy here that is **not** simply bound by your own
   grants. The dev server reads your app's local `manifest.yaml` `personal_connectors:` and
   reproduces the same app-plane gate production enforces: an undeclared toolkit/tool `403`s
-  locally too, before the request ever reaches your real connected account. *(New in CLI/SDK
-  0.1.26.)*
+  locally too, before the request ever reaches your real connected account.
 
 This lets agents build most app behavior without a live server, then layer on
 production-backed SQL/LLM/connectors/email/personal-connectors once credentials and access
