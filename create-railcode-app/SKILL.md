@@ -1,7 +1,7 @@
 ---
 name: create-railcode-app
 description: Build, modify, debug, test, and deploy Railcode static apps end-to-end. Use when creating a Railcode app from an idea, scaffolding with the Railcode CLI, wiring the zero-config SDK globals, explaining Railcode auth/data "magic", testing with railcode dev, declaring app authority, understanding app access, or deploying an app. Do not use for managed-agent authoring or general organization administration.
-version: 0.1.28
+version: 0.1.29
 ---
 
 # Create Railcode App
@@ -62,7 +62,10 @@ least:
   explicitly tells you to use direct/ad-hoc SQL. If the user asks for direct SQL, use
   `data('name').runSQL()` or a dialect-pinned `postgres`/`bigquery`/`turso` namespace
   with bound params. Any third-party SaaS API to reach via a `connector('name').fetch()`
-  service connector? Any `llm` use?
+  service connector? Any `llm` use? If AI is involved, also establish its **shape**: does it
+  process uploaded files, need to write/run code, get triggered outside the app (Slack,
+  schedule), or run unattended? Any yes → a **managed agent**, not the in-page LLM — see
+  **In-Page LLM vs Managed Agents** below.
 - **Design** — *"Should I use the default Railcode design system, or do you have a specific
   design direction?"* (drives step 2)
 - **Browser testing** — *"Should I test my changes in a browser before calling it done?"*
@@ -186,7 +189,8 @@ directly (in TypeScript, `declare` them or add an ambient `.d.ts`). The global S
   is a single turn and the model's requested calls come back unexecuted on `toolCalls`
   (mixing run and run-less tools throws). Tools grant **no new authority** — the model can
   only reach what you wire into a `run` function. See
-  [Platform magic](references/platform-magic.md) for the loop mechanics. (Tool calling is
+  [Platform magic](references/platform-magic.md) for the loop mechanics and
+  **In-Page LLM vs Managed Agents** below for when to use this at all. (Tool calling is
   new post-0.1.26: deployed apps get it from the platform-served SDK once the platform
   deploy includes it; `railcode dev` serves the CLI's bundled SDK, so local dev gains it
   with the first CLI release after 0.1.26.)
@@ -237,6 +241,30 @@ The SDK also ships a live activity drawer that logs every call; toggle it with `
 floating button, bottom-right, that does the same thing — everyone else keeps the
 undocumented keyboard toggle only. It is present in production too, just dormant until
 opened.
+
+## In-Page LLM vs Managed Agents (Cloud)
+
+The **in-page LLM** (`llm.generate`/`llm.stream`, with or without `tools`) runs in the
+viewer's tab with the app's SDK authority and dies with the tab — bounded to 8 planning
+turns / 120s by default. A **managed agent** (`$create-railcode-agent`, invoked from apps
+via `agents.invoke`/`agents.start`) runs server-side under its own ratified manifest, with
+a code sandbox and durable, auditable runs. The boundary is **capability, not
+sophistication** — a multi-step saved-query analytics assistant is fine in the page;
+"summarize this PDF" is not. Pick the first matching row:
+
+| The AI feature… | Use |
+|---|---|
+| Summarizes / classifies / analyzes data the app already reads — user watching, done in seconds | **In-page LLM** |
+| Processes, parses, or analyzes an uploaded file (PDF, XLSX, …) | **Managed agent** (`app_files` + sandbox) |
+| Writes and runs code | **Managed agent** (sandbox) |
+| Is triggered outside the app (Slack, cron, API) | **Managed agent** |
+| Runs unattended, must survive tab close, or needs retries | **Managed agent** |
+| Has effects that must not depend on who's viewing (shared writes, send as the system) | **Managed agent** |
+| Needs a run history someone will audit or debug | **Managed agent** |
+
+The planes compose: keep the chat shell in the page and delegate heavy steps by calling
+`agents.invoke`/`agents.start` from a tool's `run` — see the delegation pattern in
+[App patterns](references/app-patterns.md).
 
 ## Visual Direction
 

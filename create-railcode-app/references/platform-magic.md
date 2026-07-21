@@ -9,10 +9,10 @@ Railcode is multi-tenant: every app belongs to an **organization**, and apps are
 served from per-org subdomains. With the default two-label host strategy:
 
 ```text
-https://<app_slug>.<org_slug>.<BASE_DOMAIN>/      e.g. https://notes.acme.railcode.dev/
+https://<app_slug>.<org_slug>.<BASE_DOMAIN>/      e.g. https://notes.acme.railcode.app/
 ```
 
-(A platform configured for `single_label` serving drops the org label:
+(Self-hosted instances are single-tenant and so we drop the org label:
 `https://<app_slug>.<BASE_DOMAIN>/`. The CLI records which strategy your instance uses and
 prints the right live URL.)
 
@@ -56,7 +56,6 @@ Every call is same-origin against `/_api/*`, credentialed by the serving cookie:
 const who   = await me();          // user includes is_admin + assigned {uuid,name} custom roles
 const people = await appUsers();   // [{ uuid, name, email, is_admin }] — no role memberships
 const orgRoles = await roles();    // [{ uuid, name, description, is_member }] — every custom org role
-const ds    = await designSystem();// the org's design-system guidance (markdown string)
 
 await db.collection("notes").put("n1", { text: "hi", n: 3 });   // app-wide (== db.shared)
 await db.user.collection("notes").get("n1");                    // the caller's private scope
@@ -245,7 +244,7 @@ Rules:
 - **postgres**, **bigquery**, and **turso** are supported; the backend rejects other
   engines. The query is forwarded verbatim and never translated, so write in the target
   engine's SQL dialect (Postgres uses `$1` placeholders; BigQuery/Turso use `?`).
-- Treat SQL as **read-only**. Always use placeholders + a params array; never concatenate user
+- Always use placeholders + a params array; never concatenate user
   input.
 - Call `dataConnectors()` to discover configured connections as `{ engine, name }`. Expect it
   to be empty in unauthenticated local dev (and show a clean empty state).
@@ -271,12 +270,7 @@ const rows = await query("my_orders", { region: "emea" });   // limit omitted �
   (`string|int|float|bool`, declared by the admin); a wrong type, a missing required param,
   or an undeclared param is a clean `400` naming the param. Params declared with a default
   are optional.
-- **Context binds are the killer feature**: a template may reference `:_ctx_user_id`,
-  `:_ctx_user_email` and `:_ctx_org`, which the server injects from the signed-in viewer.
-  A template like `where rep_email = :_ctx_user_email` gives every viewer their own rows —
-  the app passes no identity and cannot forge one (a caller-supplied `_ctx*` param is
-  rejected with a 400).
-- **Always use saved queries instead of ad-hoc SQL** unless the user explicitly requested
+- **Always prefer saved queries instead of ad-hoc SQL** unless the user explicitly requested
   direct/ad-hoc SQL: admins can grant-gate invocation per query, the SQL stays server-side,
   and per-caller row scoping comes free. `savedQueries()` tells you what's callable; ask the
   org admin (or use `railcode query create`, admin-only) to publish new ones.
@@ -483,6 +477,14 @@ The mechanics worth knowing:
   path they arrive on the `done` event's `toolCalls`. Mixing run and run-less tools throws.
 - **JSON output composes with the loop.** `{ output: { type: "json", schema } }` on a tool
   loop rides a final non-streaming turn; on `llm.stream` the value lands on `done.output`.
+
+**This loop vs a managed agent:** the loop runs in the viewer's tab with the app's SDK
+authority, bounded to seconds — right for interactive analysis over data the app already
+reaches. Files, code execution, outside triggers (Slack, cron, API), unattended or durable
+work, viewer-independent effects, and auditable run history all belong to a **managed
+agent** instead — see the decision table in `SKILL.md` ("In-Page LLM vs Managed Agents").
+The planes compose: a tool's `run` may delegate to an agent — see
+[app-patterns.md](app-patterns.md).
 
 ## Email
 

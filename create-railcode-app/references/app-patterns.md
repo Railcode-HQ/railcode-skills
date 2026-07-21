@@ -302,6 +302,37 @@ model's only manual. Big `run` results are fine for the UI but reach the model o
 tell the model to aggregate/limit inside the tool call. Cancellation via `signal` resolves
 normally with `stopReason: "aborted"` — branch on `stopReason`, not try/catch.
 
+Before reaching for this at all, check the decision table in `SKILL.md` ("In-Page LLM vs
+Managed Agents") — files, code, outside triggers, and unattended work belong to a managed
+agent. The two compose: keep the chat shell in the page and delegate the heavy step to an
+agent from inside a tool:
+
+```ts
+// The app's manifest declares `agents: [report-extractor]`; the agent's own manifest
+// declares `app_files: [<this-app>]` so it can load the uploaded file into its sandbox.
+const extractReport = {
+  name: "extract_report",
+  description:
+    "Parse an uploaded report file and return its extracted metrics. Use for any " +
+    "question about the contents of an uploaded PDF/XLSX — do not guess from the filename.",
+  schema: {
+    type: "object",
+    properties: { file: { type: "string" } },
+    required: ["file"],
+  },
+  run: async ({ file }: { file: string }) => {
+    const run = await agents.invoke("report-extractor", { file }); // polls to terminal status
+    if (run.status !== "success") throw new Error(run.error_message ?? run.status);
+    return run.output_json;
+  },
+  summarize: (out) => JSON.stringify(out),
+};
+```
+
+For long agent runs, use `agents.start()` + `agents.get(requestId)` inside `run` and
+surface progress through the UI instead of blocking `invoke()` against the loop's
+`timeoutMs` — or raise `limits.timeoutMs` to cover the agent's expected runtime.
+
 Model selection is optional. Omit `provider`/`model` and the call uses the org default. To let
 the app target a specific model, enumerate the org's catalog with `llmProviders()`
 (`[{ provider, default, models: [{ model, default }] }]`) and pass `opts.model` (its provider
