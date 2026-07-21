@@ -1,7 +1,7 @@
 ---
 name: create-railcode-agent
 description: Build, test, publish, invoke, schedule, and update Railcode managed agents with the Railcode CLI. Use when creating an org-scoped managed agent, editing an agent manifest (JSON or YAML), running a draft or saved agent, investigating an agent run, managing its cron schedule, running an agent from Slack (@Railcode $agent), pairing an agent with a companion app, or when the agent should own personal connectors (Gmail, Slack, ...) on behalf of a single owner. Do not use for static Railcode apps, in-app LLM tool loops (llm.generate({ tools }) — see create-railcode-app), or general organization administration.
-version: 0.1.10
+version: 0.1.11
 ---
 
 # Create Railcode Agent
@@ -22,10 +22,11 @@ If the skill changes, re-read this file from the top. If npm is unreachable, sta
 latest version could not be verified and do not claim this guidance is current. This version
 was checked against the published **Railcode CLI 0.1.26**. The
 [manifest tools reference](references/manifest-tools.md) reflects the backend `tools.*` schema
-as of 2026-07-20 (adds `app_files` selective file loading and explicit read-scope selection;
-`code_exec` is now a **legacy** key — the sandbox is deployment infrastructure every agent
-gets); the CLI itself has no manifest schema of its own, so that reference is versioned
-against the backend, not the CLI package.
+as of 2026-07-21 (**`input_schema` removed** — agent input is free-form now; **run limits
+raised** — new defaults/maxima; `app_files` selective file loading; explicit read-scope
+selection; `code_exec` legacy — the sandbox is deployment infrastructure every agent gets);
+the CLI itself has no manifest schema of its own, so that reference is versioned against
+the backend, not the CLI package.
 
 ## When To Use A Managed Agent vs The In-Page LLM
 
@@ -66,7 +67,8 @@ propose the nearest supported shape. Clarify only choices that materially change
 definition:
 
 - the job it owns and the output expected;
-- the input it accepts and whether an input schema is required;
+- the input it accepts — free-form JSON or text; the `system` prompt is the input contract
+  (`input_schema` was removed 2026-07-21 and is now rejected as an unknown key);
 - the model and tools it needs;
 - whether it runs on demand, from an app, on a schedule, or by Slack mention;
 - whether it needs a **companion app** (see [Companion Apps](#companion-apps));
@@ -178,9 +180,9 @@ railcode agent schedule set <agent> --cron "0 9 * * *" --timezone UTC
 Use an IANA timezone and a five-field cron expression. Verify the stored schedule after every
 mutation. `run-now` executes synchronously against real services.
 
-A scheduled run passes **null** input — there is no per-schedule payload. An agent meant to run
-on a schedule should therefore **omit `input_schema`**: a `type: object` schema rejects null and
-fails every tick with a 422. See [example agents](references/examples.md) (`daily-metrics-report`).
+A scheduled run passes **null** input — there is no per-schedule payload. Write the `system`
+prompt so a run with no input knows exactly what to do. See
+[example agents](references/examples.md) (`daily-metrics-report`).
 
 ## Slack (On By Default)
 
@@ -199,9 +201,8 @@ agent design:
 - **Authority is unchanged.** The Slack caller is resolved by verified email to a live org
   member and must hold the normal invoke grant — no match, no run. A `personal` agent is
   therefore reachable on Slack only by its owner.
-- **Input arrives as `{ text: <message> }`** and is accepted for every agent regardless of
-  its declared `input_schema` — a schema constrains programmatic callers, it never blocks
-  a Slack mention.
+- **Input arrives as `{ text: <message> }`.** Agent input is free-form (structured input
+  validation was removed 2026-07-21), so any agent can be mentioned.
 - **The platform posts the final reply** into the mentioning thread, on success and on
   failure. Whatever the agent returns IS the Slack reply (a Slack-triggered run is told so
   in its system prompt and to write Slack mrkdwn); it does not need the `slack` connector

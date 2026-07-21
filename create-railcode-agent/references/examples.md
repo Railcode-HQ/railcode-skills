@@ -43,13 +43,14 @@ The smallest agent that runs, and the safe one to `test` first — it declares n
 draft run touches no data and has no side effects beyond model spend.
 
 - **Scenario** — turn a blob of text into 3–5 bullet points.
-- **Demonstrates** — the required skeleton (`kind: agent`, `name`, `model`, `system`) plus an
-  `input_schema` with one required field (`text`) and one optional (`max_bullets`);
-  `additionalProperties: false` rejects unexpected input keys.
+- **Demonstrates** — the required skeleton (`kind: agent`, `name`, `model`, `system`) and
+  the free-form input contract: input arrives unvalidated (`input_schema` was removed
+  2026-07-21), so the `system` prompt names the expected fields (`text`, optional
+  `max_bullets`) and says what to do when they're missing.
 - **Visibility** — `org` (the default); no `--visibility` flag needed.
-- **Non-defaults** — none. No `tools` (defaults to none) and no `limits` (defaults: 50 steps /
-  60 s / 50k total tokens — see [manifest-tools.md](manifest-tools.md); a later example tunes
-  them).
+- **Non-defaults** — none. No `tools` (defaults to none) and no `limits` (defaults: 100
+  steps / 300 s / 50k total tokens — see [manifest-tools.md](manifest-tools.md); a later
+  example tunes them).
 - **Try it** (safe — no tools, no side effects):
   ```bash
   railcode agent test --file examples/minimal-summarizer.yaml \
@@ -57,8 +58,9 @@ draft run touches no data and has no side effects beyond model spend.
   railcode agent create --file examples/minimal-summarizer.yaml
   railcode agent run minimal-summarizer --input '{"text":"..."}'
   ```
-- **Adapt** — rewrite `system` for a different summary style; add fields to `input_schema`
-  (e.g. `format: {enum: [bullets, paragraph]}`); add a `limits` block if inputs get large.
+- **Adapt** — rewrite `system` for a different summary style; extend the input contract in
+  `system` (e.g. an optional `format` of bullets or paragraph); add a `limits` block if
+  inputs get large.
 
 ---
 
@@ -72,9 +74,9 @@ with no caller input.
   **domain allowlist** (recipients restricted to `yourcompany.com`), a `limits` block using the
   current keys (`max_tokens_total` / `max_tokens_turn`), and an attached **cron schedule** — a
   separate resource, not a manifest key.
-- **No `input_schema` — deliberate.** A cron run always passes `null`, and `_validate_input`
-  runs a `type: object` schema against that null → a **422 on every tick**. Scheduled agents
-  that need no caller input must omit `input_schema`.
+- **Null-input by design.** A cron run always passes `null` input, so the `system` prompt
+  tells the agent exactly what a run with no input should do. (Input is free-form for
+  every agent — `input_schema` was removed 2026-07-21.)
 - **Visibility** — `org` (the default).
 - **Non-defaults** — a tight `limits` block, plus the cron schedule below.
 - **Grants** — needs `daily_active_users` ratified as a saved query in the org, and the `email`
@@ -96,5 +98,5 @@ with no caller input.
   `--cron` is a five-field expression; `--timezone` is an IANA zone (or a `UTC±HH:00` offset).
   Schedules are capped at 48 fires/day (no more frequent than ~every 30 minutes).
 - **Adapt** — swap the saved-query name; widen/narrow the email allowlist; change the cron or
-  timezone; tune `limits`. To make it on-demand instead of scheduled, add an `input_schema`
-  (e.g. a `date` override) and skip the `schedule set` step.
+  timezone; tune `limits`. To make it on-demand instead of scheduled, describe an input
+  convention in `system` (e.g. an optional `date` override) and skip the `schedule set` step.

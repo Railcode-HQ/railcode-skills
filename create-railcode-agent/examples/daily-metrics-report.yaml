@@ -3,8 +3,8 @@
 # The schedule is a SEPARATE resource, not a manifest key. After creating the agent, attach it:
 #   railcode agent schedule set daily-metrics-report --cron "0 9 * * *" --timezone America/New_York
 #
-# A cron run always passes NULL input, and a `type: object` input_schema would reject null and
-# 422 every tick — so this agent deliberately declares no input_schema.
+# A cron run always passes NULL input — the system prompt tells the agent exactly what to do
+# with no input. (Agent input is free-form; input_schema was removed 2026-07-21.)
 # Reference-annotated writeup: ../references/examples.md.
 kind: agent
 name: daily-metrics-report

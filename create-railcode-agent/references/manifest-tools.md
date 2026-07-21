@@ -6,8 +6,11 @@ so this list is a snapshot of the backend's current vocabulary, not a contract.
 Confirm the live shape with `railcode agent pull` on an existing agent, and treat
 every "Unknown ... key" or save-time error as authoritative over this file.
 
-Top-level manifest keys: `kind`, `name`, `description`, `model`, `system`,
-`input_schema`, `tools`, `limits`. Anything else is rejected. `triggers` (cron) is
+Top-level manifest keys: `kind`, `name`, `description`, `model`, `system`, `tools`,
+`limits`. Anything else is rejected — including **`input_schema`**, which was **removed
+2026-07-21**: agent input is free-form now (`input_json` reaches the model unvalidated; the
+`system` prompt is the input contract), stored manifests were migrated, and a manifest
+still declaring it fails as an unknown key. `triggers` (cron) is
 **not** a manifest key — schedules are a separate resource, see
 [cli-workflow.md](cli-workflow.md). `visibility` (`org` | `personal`) is **not** inside
 the manifest either — it's a sibling field the CLI sends alongside `manifest` via
@@ -86,11 +89,15 @@ and no longer gates anything.)
 
 | Field | Default | Max |
 |---|---|---|
-| `max_steps` | 50 | 100 |
-| `timeout_seconds` | 60 | 300 |
+| `max_steps` | 100 | 100 |
+| `timeout_seconds` | 300 | 300 |
 | `max_tool_calls` | 100 | 200 |
-| `max_tokens_total` | 50000 | 500000 |
-| `max_tokens_turn` | 8192 | 100000 |
+| `max_tokens_total` | 50000 | 2000000 |
+| `max_tokens_turn` | 50000 | 200000 |
+
+*(Raised 2026-07-21 — `max_steps` and `timeout_seconds` now default to their maxima, and the
+token ceilings quadrupled/doubled: total 500k → 2M, turn 100k → 200k, turn default 8192 →
+50k.)*
 
 `max_tokens_total` is the cumulative run budget (input+output across all turns); `max_tokens_turn`
 is the per-turn output ceiling. `max_tokens` is accepted as a **legacy alias** for
@@ -111,8 +118,9 @@ model — every turn resends the conversation, and every tool result lands in it
 - **Document editing and file-analysis tasks use far more tokens than intuition
   suggests**: loaded file content, sandbox command output, and repeated re-reads all
   count against `max_tokens_total`, and a long rewritten document pushes
-  `max_tokens_turn`. Raise `max_tokens_total` into the hundreds of thousands rather than
-  leaving the 50k default, raise `max_tokens_turn` when the agent must emit a long
-  output, and give `max_steps`/`timeout_seconds` matching room.
+  `max_tokens_turn`. Raise `max_tokens_total` into the hundreds of thousands (or beyond —
+  the ceiling is 2M) rather than leaving the 50k default, and raise `max_tokens_turn`
+  when the agent must emit a long output. `max_steps`/`timeout_seconds` already default
+  to their maxima — tokens are the knob that needs sizing.
 - If a test run ends `limit_exceeded` (or stops at `max_steps`), raise the ceiling first —
   don't start by trimming the task.

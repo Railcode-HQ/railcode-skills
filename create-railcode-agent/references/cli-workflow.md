@@ -57,9 +57,9 @@ railcode agent run <agent> --input '{"k":"v"}' [--trace]
   default input is `null`. `test` runs an unsaved manifest; `run` invokes a saved agent.
 - Human output includes `Status:`, request ID, and output JSON. `--trace` appends a table of
   model/tool steps; `--json` prints the raw run detail.
-- A runtime failure can still exit 0 when the invocation request itself succeeded. Invalid
-  input against the agent's input schema returns non-zero `422`. Automation must inspect the
-  run status, not only `$?`.
+- A runtime failure can still exit 0 when the invocation request itself succeeded — input is
+  free-form (`input_schema` was removed 2026-07-21), so there is no input-validation `422`.
+  Automation must inspect the run status, not only `$?`.
 
 Permissions: `list`/`show`/`pull` only ever surface **org** agents plus the caller's own
 **personal** agents (someone else's personal agent 404s, admins included). For an **org**
