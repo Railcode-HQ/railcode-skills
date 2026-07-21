@@ -104,6 +104,14 @@ The globals are exactly: `me`, `appUsers`, `roles`, `designSystem`, `db`, `files
   the pair to show progress rather than block on `invoke()`. *(`start`/`get` new in CLI/SDK
   0.1.24.)*
 
+The SDK also mounts a thin **Railcode top bar** on served apps (new in 0.1.27):
+"Railcode" (→ the org launcher) on the left, the app name centered, the viewer's name and a
+Log out control on the right — the logout posts same-origin `POST /_api/logout`, which
+clears the parent-scoped serving cookie. It is Shadow-DOM isolated (no CSS leakage either
+way), starts **collapsed** behind a top-edge tab, opens on click only, and while open
+pushes the page down by its height rather than overlaying — so don't design a competing
+fixed chrome element into the top edge, and don't build your own logout.
+
 The SDK also ships a live inspector drawer that logs every call (`db`, `files`, `llm`,
 `email`, `data`/`postgres`/`bigquery`/`turso`, `connector`, `personalConnections`, `me()`, `appUsers()`, `roles()`, `designSystem()`) with a pending → ok/error
 transition and timing. Toggle it with ``Ctrl+` `` (control + backtick); org admins/owners
@@ -333,7 +341,7 @@ Two different kinds of operation live on this one global, and the difference is 
   part of that toolkit, and `409` if the caller hasn't connected that toolkit yet — render the
   `409` as a "Connect your account" prompt, not an error state. In-house tool slugs are
   lowercase and case-sensitive; use the exact value returned by `tools(toolkit)`.
-- **Custom MCP servers (post-0.1.26).** Beyond the bundled registry, a user can connect
+- **Custom MCP servers (new in 0.1.27).** Beyond the bundled registry, a user can connect
   **any remote MCP server by pasting its URL** on the personal-connectors surface
   (https-only and SSRF-guarded; auth: `none`, a pasted bearer `token`, or `oauth` via
   discovery + dynamic client registration). The connection appears in `list()` as a
@@ -380,7 +388,7 @@ const result = await llm.generate("Classify this customer.", {
 
 - Input is a prompt string **or** a `messages: [{ role, content }]` array. Options:
   `provider`, `model`, `system`, `output`, `tools`, `limits`, `signal`, `maxOutputTokens`,
-  `metadata`. *(`temperature` was removed end-to-end post-0.1.26 — current frontier models
+  `metadata`. *(`temperature` was removed end-to-end in 0.1.27 — current frontier models
   reject non-default sampling, so it had become a dead knob. Don't send it.)*
 - `llmProviders()` lists the callable catalog as `{ provider, default, models: [{ model,
   default }] }` (the same data `railcode llm providers` prints). Pass a catalog `model` (its
@@ -407,9 +415,7 @@ const result = await llm.generate("Classify this customer.", {
 
 ### Tool calling — `llm.generate({ tools })` / `llm.stream({ tools })`
 
-*(New post-0.1.26 — merged to the platform 2026-07-20. Deployed apps get it from the
-platform-served SDK; `railcode dev` serves the CLI's bundled SDK, so local dev gains it with
-the first CLI release after 0.1.26.)*
+*(New in CLI/SDK 0.1.27, including under `railcode dev`.)*
 
 Both LLM calls accept `tools` — plain objects the app defines, wrapping anything it can
 already do. A tool is `{ name, description, schema?, run?, summarize? }`:

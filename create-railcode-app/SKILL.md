@@ -1,7 +1,7 @@
 ---
 name: create-railcode-app
 description: Build, modify, debug, test, and deploy Railcode static apps end-to-end. Use when creating a Railcode app from an idea, scaffolding with the Railcode CLI, wiring the zero-config SDK globals, explaining Railcode auth/data "magic", testing with railcode dev, declaring app authority, understanding app access, or deploying an app. Do not use for managed-agent authoring or general organization administration.
-version: 0.1.32
+version: 0.1.33
 ---
 
 # Create Railcode App
@@ -30,7 +30,7 @@ Then honor what you find:
   in your handoff and proceed with the installed version rather than blocking, but don't claim
   the skill or CLI reflects the latest.
 
-This skill was last checked against the published **CLI 0.1.26** (the multi-tenant Railcode
+This skill was last checked against the published **CLI 0.1.27** (the multi-tenant Railcode
 platform). It intentionally documents only commands relevant to building apps. Use
 `$create-railcode-agent` for managed-agent manifests/runs/schedules and
 `$manage-railcode-org` for organization administration. npm is the source of truth for the
@@ -141,8 +141,11 @@ pnpm). Examples here use `npm`; substitute your own manager. Note npm's build is
 build`, not `npm build`.
 
 Use lowercase app names with digits and dashes only (a DNS label: `^[a-z0-9][a-z0-9-]{0,62}$`).
-`railcode init <app>` scaffolds a single self-contained app directory `./<app>/` — there is
-no `apps/`/`app-bundles/` workspace split. The directory is the source of truth; the build
+`railcode init <app> [dir]` scaffolds a single self-contained app directory — `./<app>/` by
+default, or an existing directory you name (`railcode init my-app .` scaffolds into the
+current dir; non-empty is fine, but an existing `railcode.json` is refused without
+`--force`; the optional `[dir]` is new in CLI 0.1.27). There is no
+`apps/`/`app-bundles/` workspace split. The directory is the source of truth; the build
 output (`dist/` for the react template, or the directory itself for the no-build static
 template) is what `railcode deploy` uploads.
 
@@ -204,9 +207,9 @@ directly (in TypeScript, `declare` them or add an ambient `.d.ts`). The global S
   only reach what you wire into a `run` function. See
   [Platform magic](references/platform-magic.md) for the loop mechanics and
   **In-Page LLM vs Managed Agents** below for when to use this at all. (Tool calling is
-  new post-0.1.26: deployed apps get it from the platform-served SDK once the platform
-  deploy includes it; `railcode dev` serves the CLI's bundled SDK, so local dev gains it
-  with the first CLI release after 0.1.26.)
+  new in CLI/SDK 0.1.27, including under `railcode dev`. The react scaffold's ambient SDK
+  types don't declare `tools` yet — extend the ambient `LlmOptions` declaration if
+  TypeScript complains.)
 - `data('name').runSQL(query, params)` runs SQL against a connection of any kind
   (dispatched on its stored engine server-side); the dialect-pinned `postgres('name')` /
   `bigquery('name')` / `turso('name')` only reach connections of that engine. Each takes
@@ -251,7 +254,7 @@ directly (in TypeScript, `declare` them or add an ambient `.d.ts`). The global S
   a user can connect **any remote MCP server by URL** from the personal-connectors surface
   (https-only; auth: none, pasted bearer token, or OAuth with discovery + DCR); it shows up
   as a toolkit `custom_<slug>` marked `custom: true`, callable by an app on the owner's
-  behalf like any declared toolkit. (Custom MCP is new post-0.1.26.)
+  behalf like any declared toolkit. (Custom MCP is new in 0.1.27.)
 
 The SDK also ships a live activity drawer that logs every call; toggle it with ``Ctrl+` ``
 (control + backtick). Org admins/owners **and the current app's owner** also get a small

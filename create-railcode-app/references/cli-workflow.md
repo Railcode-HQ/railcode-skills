@@ -15,9 +15,9 @@ deploying a static app on the **multi-tenant** Railcode platform. For managed ag
 The CLI ships as the npm package **`railcode`**. The app-building subset is:
 
 ```
-railcode login [--api-url <url>]              Sign in (browser) and mint a personal API token
+railcode login [--api-url <url>] [--paste|--no-browser]   Sign in (browser or pasted code) and mint a personal API token
 railcode login --setup-token <token>          Non-interactive onboarding login (one-time setup token)
-railcode init <app> [--template static|react] Scaffold a new app directory
+railcode init <app> [dir] [--template static|react]   Scaffold an app (into ./<app>/, or an existing dir)
 railcode dev [--port <n>] [--asset-port <n>] [--reset]   Run the app locally against an emulated /_api
 railcode deploy [--private]                   Build (if configured) and deploy the app here
 railcode design-system                        Print your org's design-system guidance (markdown)
@@ -64,16 +64,24 @@ cleared and you're told to `railcode login` again.
 ## Log In
 
 ```bash
-railcode login [--api-url <url>]
+railcode login [--api-url <url>] [--paste|--no-browser]
 ```
 
-Login is **browser-based** (not an email/password prompt). The CLI:
+Login is **browser-based** (not an email/password prompt). There is **no "Server URL"
+prompt** (dropped in CLI 0.1.27): the API URL resolves non-interactively —
+`--api-url` > `RAILCODE_API_URL` > saved config > the default
+`https://api.railcode.app`. The CLI:
 
 1. Starts a localhost HTTP callback, prints the authorization link, and **auto-opens your
    default browser** to it (new in CLI 0.1.14; paste the printed URL if it doesn't open).
 2. The browser does normal dashboard auth and approves the CLI.
 3. The CLI exchanges the one-time code for a long-lived, revocable **personal API token**,
    resolves your organization, and saves everything to `~/.railcode/config.json`.
+
+Since CLI 0.1.27 there is also a **paste-the-code fallback**: the authorize page can
+display a one-time code with a copy button, and the CLI accepts either the localhost
+callback or a pasted code — whichever happens first. `--paste` (or `--no-browser`) skips
+the localhost server entirely, for SSH/headless machines.
 
 Browser login needs a TTY. In non-interactive environments set `RAILCODE_API_TOKEN`
 instead. If you have no organization yet, finish onboarding in the dashboard, then run
@@ -87,16 +95,20 @@ or already used, generate a fresh prompt from the dashboard.
 ## Create An App
 
 ```bash
-railcode init <app> [--template static|react]
+railcode init <app> [dir] [--template static|react]
 ```
 
 Behavior:
 
 - Validates the app slug against `^[a-z0-9][a-z0-9-]{0,62}$` (a DNS label: lowercase
   letters, digits, dashes).
-- Scaffolds a **single self-contained directory `./<app>/`** — there is no
+- Scaffolds a **single self-contained directory** — `./<app>/` by default, or the optional
+  `[dir]` (new in CLI 0.1.27): `railcode init foobar .` scaffolds into the current
+  directory, `railcode init foobar somedir` into `./somedir`. There is no
   `apps/`/`app-bundles/` workspace split, and no template repo is copied.
-- Refuses to scaffold into a non-empty directory.
+- A non-empty target is fine (the 0.1.26-era empty-dir requirement is gone), but an
+  existing `railcode.json` is refused unless `--force`. The "Next:" hint prints
+  `cd <dir>` only when files landed outside the cwd.
 
 Templates:
 
@@ -342,11 +354,10 @@ An org can configure **many models across many providers**. In app code, calls r
 `opts.provider` (a provider name alone → that provider's default model) to `llm.generate()` /
 `llm.stream()`, or pass neither to use the org default marked in the listing.
 
-LLM **tool calling** (`opts.tools`, post-0.1.26) rides this same plane: the wire carries only
-each tool's `{ name, description, schema }` — `run`/`summarize` execute in the page — and
-under `railcode dev` the calls forward to the real instance like every other LLM call. But
-the dev server serves the **CLI's bundled SDK**, so local dev only gains the tool loop with
-the first CLI release after 0.1.26 (deployed apps get the platform-served SDK).
+LLM **tool calling** (`opts.tools`, new in CLI/SDK 0.1.27) rides this same plane: the wire
+carries only each tool's `{ name, description, schema }` — `run`/`summarize` execute in the
+page — and under `railcode dev` the calls forward to the real instance like every other LLM
+call (the 0.1.27 CLI bundles the tool-loop SDK).
 
 ## Deploy An App With The CLI
 

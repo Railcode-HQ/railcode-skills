@@ -258,8 +258,8 @@ client-side; on a tool loop the JSON value lands on the `done` event instead). A
 rather than assuming every failure is transient. Render provider errors and token-cap
 failures as normal app states; do not retry indefinitely.
 
-Tool calling (post-0.1.26; needs a platform SDK that has it — see the "Tool calling"
-section of [platform-magic.md](platform-magic.md)):
+Tool calling (new in CLI/SDK 0.1.27 — see the "Tool calling" section of
+[platform-magic.md](platform-magic.md)):
 pass `tools` — `{ name, description, schema?, run?, summarize? }` objects wrapping the SDK
 calls the app already makes. All tools with `run` → the SDK runs the whole agentic loop in
 the page; none with `run` → single turn, requested calls returned unexecuted on `toolCalls`;
