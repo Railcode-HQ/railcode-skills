@@ -298,7 +298,7 @@ Declare the narrowest toolkit/tool set your app actually calls, under `run_as: a
 ```yaml
 run_as: app
 personal_connectors:
-  - gmail:GMAIL_SEND_EMAIL
+  - gmail:send_email
 ```
 
 Gate the UI on connection state, not just a try/catch — `call()`'s `409` means "not
@@ -307,7 +307,7 @@ connected yet," which is a normal state to design for, not an error:
 ```ts
 async function sendViaGmail(to: string, subject: string, body: string) {
   try {
-    const { result } = await personalConnections.call("gmail", "GMAIL_SEND_EMAIL", {
+    const { result } = await personalConnections.call("gmail", "send_email", {
       recipient_email: to, subject, body,
     });
     return result;
@@ -325,7 +325,8 @@ async function sendViaGmail(to: string, subject: string, body: string) {
 
 - Use `personalConnections.tools("gmail")` at build time (or `railcode personal-connectors
   tools gmail`) to see the exact tool name and argument schema before writing the manifest
-  entry or the call — do not guess Composio tool names.
+  entry or the call. In-house tool slugs are lowercase and case-sensitive; copy the returned
+  slug exactly rather than guessing it.
 - `list()` tells you per-toolkit connection status up front, so you can show a settings-style
   "connect your account" panel instead of waiting for a `call()` to fail.
 - **Always open `connect()`'s `redirect_url` in a popup, never `location.href`.** A full-page

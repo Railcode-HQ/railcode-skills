@@ -80,7 +80,7 @@ const svc  = await serviceConnectors();           // [{ name, description, auth_
 const out  = await llm.generate("Summarize this record.", { metadata: { feature: "summary" } });
 
 const gmailTools = await personalConnections.tools("gmail");       // this app's declared subset
-const sent = await personalConnections.call("gmail", "GMAIL_SEND_EMAIL", { recipient_email, subject, body });
+const sent = await personalConnections.call("gmail", "send_email", { recipient_email, subject, body });
 ```
 
 The globals are exactly: `me`, `appUsers`, `roles`, `designSystem`, `db`, `files`, `data`, `postgres`,
@@ -306,7 +306,7 @@ truncated at a size limit (`resp.truncated`).
 ## Personal Connectors
 
 *(New in CLI/SDK 0.1.26.)* A **personal connector** is the caller's **own** connected
-third-party account (Gmail, Slack, ...), brokered by Composio — the opposite ownership axis
+third-party account (Gmail, Slack, ...) — the opposite ownership axis
 from a service connector. A service connector is one credential the *org* configures and
 every allowed caller shares; a personal connector is one connection each *individual* signs
 in and links themselves, and only they can drive it.
@@ -315,7 +315,7 @@ in and links themselves, and only they can drive it.
 const connections = await personalConnections.list();              // your status per declared toolkit
 const { redirect_url } = await personalConnections.connect("gmail"); // open in a POPUP, not a redirect
 const tools = await personalConnections.tools("gmail");             // this app's declared subset only
-const { result } = await personalConnections.call("gmail", "GMAIL_SEND_EMAIL", {
+const { result } = await personalConnections.call("gmail", "send_email", {
   recipient_email: "user@example.com", subject: "Hi", body: "...",
 });
 ```
@@ -331,13 +331,14 @@ Two different kinds of operation live on this one global, and the difference is 
   and close it once the toolkit reports connected.
 - **`call()` is not an identity op.** Which app may drive an already-connected account, and
   how much of it, comes from **this app's ratified `personal_connectors:` manifest** — not
-  from what the caller could do themselves. An app declaring `gmail:GMAIL_SEND_EMAIL` can send
+  from what the caller could do themselves. An app declaring `gmail:send_email` can send
   mail as the caller and cannot read their inbox, even though the caller personally could do
   both. `tools(toolkit)` returns only the app's declared subset (its schema is what `call()`
   expects). An undeclared toolkit/tool is a `403` **every time**; an app with no ratified
   `personal_connectors:` manifest can call nothing at all. `call()` is `404` if the tool isn't
   part of that toolkit, and `409` if the caller hasn't connected that toolkit yet — render the
-  `409` as a "Connect your account" prompt, not an error state.
+  `409` as a "Connect your account" prompt, not an error state. In-house tool slugs are
+  lowercase and case-sensitive; use the exact value returned by `tools(toolkit)`.
 
 This is distinct from an admin-configured **service connector** (`connector()` /
 `serviceConnectors()`, above): a service connector is one org-wide credential every allowed

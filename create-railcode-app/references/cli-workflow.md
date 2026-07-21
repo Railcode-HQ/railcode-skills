@@ -288,11 +288,11 @@ required**, hitting the same `/api/organizations/{org}/data/*` plane.
 railcode personal-connectors list                                    # toolkits this deployment brokers + your status
 railcode personal-connectors tools gmail                             # gmail's callable tools + input schemas
 railcode personal-connectors connect gmail                           # print an OAuth URL to open in a browser
-railcode personal-connectors call gmail GMAIL_SEND_EMAIL --args '{"recipient_email":"a@b.com","subject":"hi","body":"hi"}'
+railcode personal-connectors call gmail send_email --args '{"recipient_email":"a@b.com","subject":"hi","body":"hi"}'
 ```
 
 `railcode personal-connectors` (aliases `personal-connector`, `pc`) manages **your own**
-connected third-party accounts (Gmail, Slack, ...), brokered by Composio — distinct from an
+connected third-party accounts (Gmail, Slack, ...) — distinct from an
 org's admin-configured **service connectors** (`railcode connector`) and from an app's
 `personal_connectors:` manifest declaration below. It hits the **non-org-scoped**
 `/api/personal-connections/*` plane: a personal connection belongs to the human who ran
@@ -305,7 +305,8 @@ required.
   configures).
 - `tools <toolkit>` — that toolkit's full callable-tool catalog with input schemas, so you
   know what to write into an app's `personal_connectors:` and what
-  `personalConnections.call(toolkit, tool, args)` expects.
+  `personalConnections.call(toolkit, tool, args)` expects. In-house tool slugs are lowercase
+  and case-sensitive; copy the returned slug exactly.
 - `connect <toolkit>` — prints the provider's OAuth URL; open it in a browser yourself (the
   CLI doesn't open it for you).
 - `call <toolkit> <tool> [--args '<json>']` — runs one tool **as you**, against your own
@@ -436,7 +437,7 @@ email: true                 # transactional email gateway access (email.send)
 adhoc_sql: [analytics]      # only when the user explicitly requested direct/ad-hoc SQL
 agents: [sales-digest]      # managed agents this app may invoke (agents.invoke)
 personal_connectors:        # which of the CALLER'S OWN connected accounts + tools this
-  - gmail:GMAIL_SEND_EMAIL  # app may call via personalConnections.call() — a toolkit list,
+  - gmail:send_email        # app may call via personalConnections.call() — a toolkit list,
   - slack                   # not a boolean; "gmail" (whole toolkit) or "gmail:*" both work,
                              # but name the narrowest tool the app actually needs
 ```
@@ -465,6 +466,6 @@ railcode manifest show <app>        # the app's ratified doc + any pending diff 
 - `personal_connectors` is unlike every other key above: it does **not** ratify against the
   *deployer's* grants, because there is no shared resource to ratify — it bounds which of
   **each individual caller's own** connected accounts the app may touch, and how much.
-  Declaring `gmail:GMAIL_SEND_EMAIL` never lets the app read anyone's inbox, even though a
+  Declaring `gmail:send_email` never lets the app read anyone's inbox, even though a
   caller could do that themselves; an undeclared toolkit/tool is a `403` for every caller, no
   matter who deployed the app or what they personally hold.

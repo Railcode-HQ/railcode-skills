@@ -1,7 +1,7 @@
 ---
 name: create-railcode-app
 description: Build, modify, debug, test, and deploy Railcode static apps end-to-end. Use when creating a Railcode app from an idea, scaffolding with the Railcode CLI, wiring the zero-config SDK globals, explaining Railcode auth/data "magic", testing with railcode dev, declaring app authority, understanding app access, or deploying an app. Do not use for managed-agent authoring or general organization administration.
-version: 0.1.26
+version: 0.1.27
 ---
 
 # Create Railcode App
@@ -210,12 +210,13 @@ directly (in TypeScript, `declare` them or add an ambient `.d.ts`). The global S
   `agents.get(requestId)` to poll yourself — e.g. to show progress instead of blocking on
   `invoke()`. (`start`/`get` and the `queued` status new in CLI/SDK 0.1.24.)
 - `personalConnections` → the **caller's own** connected third-party accounts (Gmail, Slack,
-  ...), brokered by Composio — distinct from `connector()` (an org-admin-configured service
+  ...) — distinct from `connector()` (an org-admin-configured service
   connector). `list()` and `connect(toolkit)` are identity ops (no manifest check beyond the
   app only offering toolkits it declares); `tools(toolkit)` and `call(toolkit, tool, args)` are
   bound by **this app's ratified `personal_connectors:` manifest declaration** — undeclared is
   a `403` every time, even though the caller could do it by hand. A manifest declaring
-  `gmail:GMAIL_SEND_EMAIL` lets the app send mail as the caller and nothing else. `call()`
+  `gmail:send_email` lets the app send mail as the caller and nothing else. Tool slugs are
+  lowercase and case-sensitive; copy the exact slug returned by `tools(toolkit)`. `call()`
   returns `409` if the caller hasn't connected that toolkit yet — render that as a "Connect
   your account" prompt, not an error. (New in CLI/SDK 0.1.26.)
 

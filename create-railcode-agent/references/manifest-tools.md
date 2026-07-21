@@ -26,7 +26,7 @@ the manifest either — it's a sibling field the CLI sends alongside `manifest` 
 | `app_data_write` | `string[]` (app slugs) — **write**, new 2026-07-16 | `app_kv_set`, `app_kv_delete`, `publish_artifact_to_app(name, app)` | `can_manage_app` — the app's **owner, or an org admin, only**. Declaring it for an app you don't manage is a **hard save failure**, not a warning |
 | `code_exec` | `bool` | the sandbox's own tool set (bash + read/write/edit/grep/find/ls), reported dynamically by the sandbox at boot — one all-or-nothing authority | a ratification **warning** ("may run arbitrary code... can reach PyPI and npm") |
 | `agent_kv` | `bool` | `agent_kv_get/set/query/delete` against the agent's own private, cross-run store | none beyond holding the agent itself |
-| `personal_connectors` | `string[]` — toolkit names or `toolkit:tool` pairs (e.g. `["gmail"]` or `["gmail:GMAIL_SEND_EMAIL"]`) | `personal_tools(toolkit)` (list that toolkit's callable tools + schemas) and `personal_call(toolkit, tool, arguments)` (run one) | **`visibility: personal` only** — a save with this key on an `org` agent is a hard failure. No grant is checked at save time; execution runs against the agent's **owner's own** connected account (Gmail, Slack, ...) and 403s per-call if the owner hasn't connected that toolkit yet |
+| `personal_connectors` | `string[]` — toolkit names or `toolkit:tool` pairs (e.g. `["gmail"]` or `["gmail:send_email"]`); in-house tool slugs are lowercase and case-sensitive, so copy discovery output exactly | `personal_tools(toolkit)` (list that toolkit's callable tools + schemas) and `personal_call(toolkit, tool, arguments)` (run one) | **`visibility: personal` only** — a save with this key on an `org` agent is a hard failure. No grant is checked at save time; execution runs against the agent's **owner's own** connected account (Gmail, Slack, ...) and 403s per-call if the owner hasn't connected that toolkit yet |
 
 A save that adds authority you don't hold (any grant-backed row above — `saved_queries`,
 `connectors`, `docs`, `email`, `adhoc_sql`, `app_data`, `app_data_write`) fails with the
@@ -72,4 +72,9 @@ without a sandbox to write it from.
 | `max_steps` | 50 | 100 |
 | `timeout_seconds` | 60 | 300 |
 | `max_tool_calls` | 100 | 200 |
-| `max_tokens` | 50000 | 500000 |
+| `max_tokens_total` | 50000 | 500000 |
+| `max_tokens_turn` | 8192 | 100000 |
+
+`max_tokens_total` is the cumulative run budget (input+output across all turns); `max_tokens_turn`
+is the per-turn output ceiling. `max_tokens` is accepted as a **legacy alias** for
+`max_tokens_total`.

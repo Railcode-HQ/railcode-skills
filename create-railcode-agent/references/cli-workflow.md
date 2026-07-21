@@ -35,9 +35,13 @@ railcode agent run <agent> --input '{"k":"v"}' [--trace]
 
 - `<agent>` is a name or UUID. Aliases: `list`=`ls`, `show`=`get`, `pull`=`export`,
   `update`=`edit`, `delete`=`rm`, `run`=`invoke`, and `agent`=`agents`.
-- Manifests are JSON in the exact shape stored under `agent.manifest`. They are distinct from
-  app authority manifests, which are YAML. `pull` writes only the current manifest;
-  `show --manifest` prints it.
+- `--file` (on `create`/`update`/`test`) accepts the manifest as **JSON or YAML** in the exact
+  shape stored under `agent.manifest` — the CLI picks the parser by extension (`.yaml`/`.yml`
+  → YAML, otherwise JSON) and both parse to the same object. This is the agent's own manifest,
+  distinct from the app *authority* manifest (`$create-railcode-app`), which is always YAML.
+  `pull` and `show --manifest` **emit JSON only** — there is no YAML output flag; `pull` writes
+  the current manifest, `show --manifest` prints it. To hand off the definition as YAML,
+  convert that pulled JSON yourself.
 - `create` and `update` print the agent name, UUID, visibility, and ratification warnings.
   `--json` prints the raw response. `update` replaces the stored manifest.
 - **`--visibility <org|personal>`** (new in CLI 0.1.26) sets who the agent belongs to. On

@@ -1,7 +1,7 @@
 ---
 name: create-railcode-agent
-description: Build, test, publish, invoke, schedule, and update Railcode managed agents with the Railcode CLI. Use when creating an org-scoped managed agent, editing an agent JSON manifest, running a draft or saved agent, investigating an agent run, or managing its cron schedule, or when the agent should own personal connectors (Gmail, Slack, ...) on behalf of a single owner. Do not use for static Railcode apps or general organization administration.
-version: 0.1.2
+description: Build, test, publish, invoke, schedule, and update Railcode managed agents with the Railcode CLI. Use when creating an org-scoped managed agent, editing an agent manifest (JSON or YAML), running a draft or saved agent, investigating an agent run, or managing its cron schedule, or when the agent should own personal connectors (Gmail, Slack, ...) on behalf of a single owner. Do not use for static Railcode apps or general organization administration.
+version: 0.1.4
 ---
 
 # Create Railcode Agent
@@ -44,7 +44,8 @@ Clarify only choices that materially change its definition:
   owner's own Gmail/Slack/etc.) or should otherwise be usable by exactly one person.
 
 Use the narrowest useful tool set and explicit instructions. Do not invent tool identifiers,
-provider names, or manifest fields; managed-agent manifests are server-defined JSON. See
+provider names, or manifest fields; managed-agent manifest fields are server-defined (author
+the file in JSON or YAML — see step 2). See
 [manifest tools reference](references/manifest-tools.md) for the current `tools.*` vocabulary
 and `limits` — a snapshot of the server schema, not a contract; a save-time error always wins
 over this file.
@@ -54,6 +55,11 @@ over this file.
 Run `railcode login` if the CLI has no usable saved token. Managed agents are org-scoped and
 do not use an app directory or `railcode.json`.
 
+**Manifest file format.** `--file` (on `create`/`update`/`test`) reads the manifest as **JSON
+or YAML**; the CLI picks the parser by extension (`.yaml`/`.yml` → YAML, anything else →
+JSON), and both parse to the same object the API stores. There is no local manifest-schema
+validator — treat server validation and ratification warnings as authoritative.
+
 For an existing agent, pull its exact stored manifest before editing:
 
 ```bash
@@ -61,9 +67,14 @@ railcode agent show <agent>
 railcode agent pull <agent> --output agent.json
 ```
 
-For a new agent, use the current server-supported manifest shape. The CLI sends the JSON
-manifest to the API; it does not provide a local manifest-schema validator. Treat server
-validation and ratification warnings as authoritative.
+`pull` and `show --manifest` **emit JSON only** — there is no YAML output flag. If the user
+asks to see or store an agent's definition as YAML, convert that pulled JSON to YAML yourself
+and write `agent.yaml`; it round-trips back through `--file` unchanged.
+
+For a new agent, author the manifest in the current server-supported shape. **Ask the user
+whether to save the definition in the current working directory.** If yes, write it there as
+YAML (`agent.yaml`) and feed that file to `test`/`create`; if no, keep it in a scratch
+location outside their project.
 
 ### 3. Test the draft
 
@@ -88,9 +99,9 @@ silently omitted from a test run's tool list (see
 ### 4. Publish or update
 
 ```bash
-railcode agent create --file agent.json
-railcode agent create --file agent.json --visibility personal
-railcode agent update <agent> --file agent.json
+railcode agent create --file agent.yaml            # or agent.json — format is picked by extension
+railcode agent create --file agent.yaml --visibility personal
+railcode agent update <agent> --file agent.yaml
 ```
 
 `update` replaces the stored manifest. Preserve fields intentionally by starting from
@@ -128,6 +139,10 @@ railcode agent schedule set <agent> --cron "0 9 * * *" --timezone UTC
 Use an IANA timezone and a five-field cron expression. Verify the stored schedule after every
 mutation. `run-now` executes synchronously against real services.
 
+A scheduled run passes **null** input — there is no per-schedule payload. An agent meant to run
+on a schedule should therefore **omit `input_schema`**: a `type: object` schema rejects null and
+fails every tick with a 422. See [example agents](references/examples.md) (`daily-metrics-report`).
+
 ## Permissions and Boundaries
 
 - `list`, `show`, and `pull` only ever return **org** agents plus the caller's **own**
@@ -151,4 +166,6 @@ mutation. `run-now` executes synchronously against real services.
 Read [CLI reference](references/cli-workflow.md) for the exact agent commands, aliases,
 schedule behavior, inputs, outputs, and failure semantics. Read
 [manifest tools reference](references/manifest-tools.md) for the `tools.*` vocabulary,
-what each grants, its permission gate, and `limits`.
+what each grants, its permission gate, and `limits`. Read
+[example agents](references/examples.md) for worked, runnable manifests spanning the tool
+vocabulary — start from the closest one and adapt it instead of authoring from scratch.
