@@ -95,3 +95,24 @@ and no longer gates anything.)
 `max_tokens_total` is the cumulative run budget (input+output across all turns); `max_tokens_turn`
 is the per-turn output ceiling. `max_tokens` is accepted as a **legacy alias** for
 `max_tokens_total`.
+
+### Sizing `limits`
+
+A run that exhausts any cap dies as `limit_exceeded`, losing the work in flight — while an
+unused ceiling costs nothing (limits are caps, not reservations). So **err generous**:
+leave clear headroom above what a typical run should need, especially on
+`max_tokens_total`.
+
+Match the budget to the task's shape. Token burn is dominated by what flows through the
+model — every turn resends the conversation, and every tool result lands in it:
+
+- **Light tasks** (classify a record, draft a short reply, one saved-query lookup) fit the
+  defaults.
+- **Document editing and file-analysis tasks use far more tokens than intuition
+  suggests**: loaded file content, sandbox command output, and repeated re-reads all
+  count against `max_tokens_total`, and a long rewritten document pushes
+  `max_tokens_turn`. Raise `max_tokens_total` into the hundreds of thousands rather than
+  leaving the 50k default, raise `max_tokens_turn` when the agent must emit a long
+  output, and give `max_steps`/`timeout_seconds` matching room.
+- If a test run ends `limit_exceeded` (or stops at `max_steps`), raise the ceiling first —
+  don't start by trimming the task.

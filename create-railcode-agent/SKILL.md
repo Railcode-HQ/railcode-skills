@@ -1,7 +1,7 @@
 ---
 name: create-railcode-agent
 description: Build, test, publish, invoke, schedule, and update Railcode managed agents with the Railcode CLI. Use when creating an org-scoped managed agent, editing an agent manifest (JSON or YAML), running a draft or saved agent, investigating an agent run, managing its cron schedule, running an agent from Slack (@Railcode $agent), pairing an agent with a companion app, or when the agent should own personal connectors (Gmail, Slack, ...) on behalf of a single owner. Do not use for static Railcode apps, in-app LLM tool loops (llm.generate({ tools }) — see create-railcode-app), or general organization administration.
-version: 0.1.9
+version: 0.1.10
 ---
 
 # Create Railcode Agent
@@ -77,7 +77,12 @@ definition:
   `org`). Pick `personal` only when the agent needs `tools.personal_connectors` (its
   owner's own Gmail/Slack/etc.) or should otherwise be usable by exactly one person.
 
-Use the narrowest useful tool set and explicit instructions. Do not invent tool identifiers,
+Use the narrowest useful tool set and explicit instructions — but size `limits` the other
+way: match the token budget to the task and **leave headroom**. Document-editing and
+file-analysis runs use far more tokens than the defaults; a run that hits a cap dies as
+`limit_exceeded`, while an unused ceiling costs nothing (see
+[manifest tools reference](references/manifest-tools.md), "Sizing `limits`").
+Do not invent tool identifiers,
 provider names, or manifest fields; managed-agent manifest fields are server-defined (author
 the file in JSON or YAML — see step 2). See
 [manifest tools reference](references/manifest-tools.md) for the current `tools.*` vocabulary
