@@ -382,6 +382,14 @@ const result = await llm.generate("Classify this customer.", {
   **strict mode**: every object must set `additionalProperties: false` and list **all** keys
   in `required` — make optional fields nullable (`{ type: ["string", "null"] }`) rather than
   omitting them.
+- **Never put that nullable union on an `enum` field** — `{ type: ["string", "null"], enum:
+  [...] }` is an OpenAI-only idiom. Anthropic and Bedrock validate every enum member against
+  the declared type and reject it, so the schema breaks the day an admin repoints the org at
+  another provider; the gateway rejects the shape itself (a `400`, not a provider error) on
+  both `output.schema` and `tools[].schema`. For an optional enum, add a sentinel member —
+  `{ type: "string", enum: ["new", "won", "unknown"] }` — or spell it out with
+  `{ anyOf: [{ type: "string", enum: ["new", "won"] }, { type: "null" }] }`. The sentinel is
+  the safer default: it's unambiguous for the model and portable everywhere.
 - `llm.stream(input, opts)` is an async iterator of `{ type: "text" }` / `{ type: "step" }` /
   `{ type: "done" }` / `{ type: "error" }` events; without run-bearing tools it is
   **text-only** and rejects JSON output client-side (on a tool loop, the JSON value rides a
@@ -403,7 +411,8 @@ already do. A tool is `{ name, description, schema?, run?, summarize? }`:
 - `description` is the model's only manual for the tool — say what it's for AND how to use
   it well.
 - `schema` is JSON Schema for the args, validated **before** `run` (a bad arg is fed back to
-  the model as the tool result, never thrown into app code).
+  the model as the tool result, never thrown into app code). It reaches the provider as the
+  tool's `parameters`, so the nullable-enum rule above applies here too.
 - `run(args, ctx)` executes the tool; `ctx` is `{ signal, step }` — honor `signal` in long
   tools. The return value IS the result: the raw value reaches the UI as `step.result`,
   while the model sees only `summarize(result)` (default: JSON) clipped to ~6,000 chars.

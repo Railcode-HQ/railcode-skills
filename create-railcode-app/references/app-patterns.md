@@ -230,7 +230,8 @@ const result = await llm.generate(
 ```
 
 Structured output (strict mode: every object needs `additionalProperties: false` and must
-list all its keys in `required`; make optional fields nullable):
+list all its keys in `required`; make optional fields nullable — but never an `enum` field,
+see below):
 
 ```ts
 const result = await llm.generate(prompt, {
@@ -240,7 +241,7 @@ const result = await llm.generate(prompt, {
       type: "object",
       additionalProperties: false,
       properties: {
-        priority: { type: "string", enum: ["low", "medium", "high"] },
+        priority: { type: "string", enum: ["low", "medium", "high", "unknown"] },
         reason: { type: ["string", "null"] }
       },
       required: ["priority", "reason"]
@@ -250,6 +251,14 @@ const result = await llm.generate(prompt, {
 });
 // result.output holds the parsed JSON
 ```
+
+Note `priority` above: an enum that may come back empty carries a **sentinel member**
+(`"unknown"`), not a nullable type. `{ type: ["string", "null"], enum: [...] }` is an
+OpenAI-only idiom — Anthropic and Bedrock check each member against the declared type and
+reject it, so the gateway `400`s on that shape (in `output.schema` and `tools[].schema`
+alike) rather than let it break on whichever provider the org happens to run. If the field
+must be genuinely `null`, write it out: `{ anyOf: [{ type: "string", enum: [...] },
+{ type: "null" }] }`.
 
 Streaming is text-only without run-bearing tools (`llm.stream()` rejects JSON output
 client-side; on a tool loop the JSON value lands on the `done` event instead). A stream's
