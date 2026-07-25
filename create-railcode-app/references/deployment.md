@@ -66,3 +66,8 @@ After an app deploy, open the printed URL `https://<app>.<org>.<BASE_DOMAIN>/` a
 - SQL / LLM / service-connector / email features show configured, empty, or disabled states
   cleanly (never a raw error or a hang) — email also has a `403` (not granted) state.
 - The app's access mode in the admin UI matches the intended audience.
+
+To confirm a write landed rather than trusting the UI, read the live store from the terminal
+with `railcode app kv list <collection>` / `railcode app files list` (CLI 0.1.28+, app owner or
+org admin) — see [CLI workflow](cli-workflow.md#inspect-and-seed-app-storage). It reads the
+deployed app, never `railcode dev`'s local emulation.

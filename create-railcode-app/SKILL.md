@@ -1,7 +1,7 @@
 ---
 name: create-railcode-app
 description: Build, modify, debug, test, and deploy Railcode static apps end-to-end. Use when creating a Railcode app from an idea, scaffolding with the Railcode CLI, wiring the zero-config SDK globals, explaining Railcode auth/data "magic", testing with railcode dev, declaring app authority, understanding app access, or deploying an app. Do not use for managed-agent authoring or general organization administration.
-version: 0.1.41
+version: 0.1.42
 ---
 
 # Create Railcode App
@@ -19,7 +19,11 @@ npm view railcode version
 ```
 
 If the skill changes, re-read this file from the top. If npm is unreachable, say so and do not
-claim the guidance is current. This version was checked against published **CLI 0.1.27**.
+claim the guidance is current. This version was checked against published **CLI 0.1.28**.
+
+Since 0.1.28 the CLI self-updates within its major version — but only on an **interactive
+terminal**, and agent-driven sessions are non-interactive, so keep running the explicit
+`npm install -g railcode@latest` above rather than assuming you're on the latest.
 
 ## Map The Request To Railcode
 
@@ -375,6 +379,9 @@ personal-connector, and email calls are forwarded to the real instance when logg
 touch real data, incur spend, and cause side effects. Use `--reset` only when intentionally
 clearing this app's local KV/files. See [CLI workflow](references/cli-workflow.md#local-dev).
 
+Local dev storage is separate from the deployed app's: `railcode app kv` / `railcode app files`
+read and write the **live** app, never the local emulation.
+
 ## Validation
 
 Before handing off a new or changed app, run the app's normal build (the react template):
@@ -386,6 +393,16 @@ npm run build
 
 The no-build **static** template has no build step — just confirm the files load via
 `railcode dev`.
+
+**Seeding data to test with.** An app with an empty store only ever shows empty states, so
+tables, sorting, pagination, and charts go unexercised. Once the app is deployed, seed a few
+realistic records with `railcode app kv set <collection> <key> '<json>'` (`--file` for anything
+long) and `railcode app files upload <path>` — matching the shape the app actually writes, which
+you can confirm with `railcode app kv get` after creating one record through the UI. Say what
+you seeded, and remove throwaway rows afterwards (`railcode app kv delete`, or
+`railcode app kv drop <collection> --yes` when the collection was yours alone). Ask first if the
+app already holds real data. This writes to the **deployed** app; under `railcode dev`, seed
+through the app's own UI instead — the CLI doesn't touch local dev storage.
 
 If the user asked for browser testing (Build Process step 1), also exercise the running app before handing off. Start `railcode dev`, then open the printed local URL, usually `http://127.0.0.1:7331`, with whatever browser tooling you have — a browser-automation MCP, browser-use, or your harness's built-in browser. Load the app, walk the primary workflow end to end, and confirm it works at both desktop and mobile widths. Treat console errors, failed `/_api/*` calls, and broken layouts as failures to fix, not ship.
 
@@ -401,3 +418,8 @@ Deploy reads `railcode.json`, builds when configured, uploads the resolved outpu
 the live URL. A new app defaults to organization-wide access; use `railcode deploy --private`
 for a private first deploy or set the intended policy explicitly afterward. Read
 [Deployment](references/deployment.md) for resolution, access modes, and verification.
+
+To check what the live app actually stored — or to seed records and files into it — use
+`railcode app kv` / `railcode app files` (app owner or an org admin; see
+[CLI workflow](references/cli-workflow.md#inspect-and-seed-app-storage)). `set`, `delete`,
+`drop`, and `upload` write real tenant data, so only run them when the user asked for it.

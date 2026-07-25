@@ -27,6 +27,8 @@ railcode connector <list|docs|fetch> ...     Inspect/call service connectors
 railcode personal-connectors <list|tools|connect|call> ...   Your own connected accounts (Gmail, Slack, ...)
 railcode llm <providers|models>               List the LLM providers/models apps can call
 railcode manifest <validate|show> ...         Validate manifest.yaml / show an app's ratified authority manifest
+railcode app kv <collections|list|get|set|delete|drop> ...   Read/write the deployed app's KV store (owner)
+railcode app files <list|download|upload|delete> ...   Read/write the deployed app's files (owner)
 railcode apps access <app>                    Inspect the deployed app's access policy
 railcode apps set-access <app> ...            Set access when the builder has manage rights
 railcode --version
@@ -37,8 +39,15 @@ Organization-level commands are intentionally excluded. Load `$manage-railcode-o
 task is to administer apps, members, roles/grants, connections, service connectors, saved
 queries, analytics, or logs.
 
-Upgrade the CLI through your package manager (`npm install -g railcode@latest`) — it's a
-regular npm package, not a self-updating binary.
+The CLI keeps itself current. On an **interactive terminal** it checks npm at most once every
+6 hours, and installs any newer release **within the current major** with whatever global
+package manager it detects (npm/pnpm/yarn/bun), announcing it on stderr so `--json` output
+stays clean. It never crosses a major version, never blocks a command on a registry hiccup,
+and is **skipped in non-interactive/CI runs** — which is every agent-driven session, so keep
+upgrading explicitly with `npm install -g railcode@latest`. Overrides: `RAILCODE_NO_UPDATE=1`
+(off), `RAILCODE_UPDATE_DRY_RUN=1` (print the install command, forces the check off-TTY),
+`RAILCODE_REGISTRY_URL` (alternate registry). The throttle timestamp lives in
+`~/.railcode/update-check.json`.
 
 ## Install The CLI
 
@@ -399,6 +408,70 @@ The only deploy-time control is `railcode deploy --private`: a **one-shot** acti
 `mode: private` on that deploy and nothing more (it doesn't persist a flag anywhere, so a
 later plain `railcode deploy` won't re-assert it — flip access back in the dashboard and it
 stays flipped). There is no persisted `private` key in `railcode.json`.
+
+## Inspect And Seed App Storage
+
+`railcode app kv` and `railcode app files` read and write **the deployed app's** KV and file
+store from the terminal — the fastest way to confirm what an app (or an agent writing through
+`app_data_write`) actually persisted, to seed demo records, or to clear a collection between
+tests.
+
+```bash
+railcode app kv collections                      # every collection + record count
+railcode app kv list <collection> [--query '[["stage","eq","won"]]'] [--limit 20] [--count]
+railcode app kv get <collection> <key>
+railcode app kv set <collection> <key> '{"n":1}'        # or --file value.json
+railcode app kv delete <collection> <key>
+railcode app kv drop <collection> [--yes]               # every record in the collection
+
+railcode app files list
+railcode app files download <name> [--out <path>]       # default: ./<name>
+railcode app files upload <path> [--name <remote-name>]
+railcode app files delete <name>
+```
+
+**These talk to the deployed instance, not `railcode dev`.** Local dev KV/files live on disk
+under `~/.railcode/dev/<instance>/<app>/` and are only cleared with `railcode dev --reset`; a
+`railcode app kv list` never shows them.
+
+- **App resolution** — `--app <slug|uuid>`, else the `railcode.json` in the current directory,
+  exactly like `deploy`.
+- **Ownership required** — an app owner grant, or an org admin holding `app:manage_any`. A
+  plain member with app *access* is rejected; that's an authority boundary, not a bug.
+- **Scope** — `--scope shared|user|role` (default `shared`), with `--user <member-uuid>` or
+  `--role <role-uuid>` required for those two. `--scope all` enumerates every scope with owner
+  attribution but **only for the listings** (`kv collections`, `kv list`, `files list`); any
+  record or file mutation must name a single scope.
+- **`kv list` paging** — `--limit <n>` with `--offset <n>` as a whole multiple of `--limit`
+  (the API pages rather than offsets). `--count` prints the match count instead of rows.
+- **`kv set` values** — inline JSON or `--file <path>`, never both. Any JSON shape is valid:
+  object, array, string, number, or bool.
+- **`--query`** — the same `[[field, op, value], ...]` where-clause the data plane takes.
+- `--json` prints raw JSON on the read commands; `drop` prompts on a TTY and needs `--yes`
+  otherwise.
+
+### Seeding
+
+`kv set` is the practical way to fill a fresh app so its tables, filters, sorting, paging, and
+charts can actually be reviewed:
+
+```bash
+railcode app kv set companies acme '{"name":"Acme","stage":"won","value":48000}'
+railcode app kv set companies globex --file globex.json
+railcode app files upload ./sample-proposal.docx --name proposal.docx
+railcode app kv list companies                 # confirm the shape that landed
+```
+
+Match the shape the app itself writes — create one record through the UI and read it back with
+`railcode app kv get <collection> <key>` rather than inventing fields. Seed into the scope the
+app reads (`--scope user --user <uuid>` for a `db.user` collection; the default `shared` for
+`db.shared`), or the UI will look empty despite the records existing. Clean up throwaway rows
+with `kv delete`, or `kv drop <collection> --yes` when the whole collection was scratch.
+
+Treat `set`, `delete`, `drop`, `upload`, and `files delete` as writes to real tenant data:
+they hit the live app the same way a user's click does. Confirm before running one that the
+user didn't ask for, and never seed on top of an app that already holds real records without
+asking.
 
 ## App Manifest (Authority)
 
