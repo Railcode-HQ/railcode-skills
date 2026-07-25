@@ -1,7 +1,7 @@
 ---
 name: create-railcode-app
 description: Build, modify, debug, test, and deploy Railcode static apps end-to-end. Use when creating a Railcode app from an idea, scaffolding with the Railcode CLI, wiring the zero-config SDK globals, explaining Railcode auth/data "magic", testing with railcode dev, declaring app authority, understanding app access, or deploying an app. Do not use for managed-agent authoring or general organization administration.
-version: 0.1.39
+version: 0.1.40
 ---
 
 # Create Railcode App
@@ -200,6 +200,12 @@ Build a static browser app. Do not add app-specific backend services, credential
 or hardcoded Railcode URLs unless the user explicitly asks for platform work. Load
 `/_api/sdk.js` in `index.html` and call its same-origin globals directly; do not import a
 Railcode client package or create a custom SDK bootstrap.
+
+Give every top-level section its own path (`/companies`, `/people`) and put the open record in
+the path too (`/companies/acme`) — never keep navigation in an in-memory `view` variable. Deep
+links, hard refresh, and back/forward must work, since these apps get linked in Slack and
+tickets. Railcode serving falls back to the app's root `index.html`, so client-side routes
+resolve with no config — see [App patterns](references/app-patterns.md).
 
 Use the narrowest surface that fits:
 

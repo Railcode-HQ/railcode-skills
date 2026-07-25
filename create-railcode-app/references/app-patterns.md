@@ -69,6 +69,29 @@ platform serving gate. Use `me()` only to show identity or to namespace data. Us
 display. Never leak platform internals (bearer tokens, DSNs, LLM provider config, admin-only
 settings) into browser state.
 
+## Routing And URLs
+
+Any app with more than one top-level section gives each section a real path — `/companies`,
+`/people`, `/companies/acme` — never an in-memory `view` variable. Internal tools get linked
+in Slack threads and tickets; a section nobody can link to is a section nobody shares.
+
+Railcode serving supports this with no config. The deployed app and `railcode dev` both
+resolve a request the same way: the exact file, then `<path>/index.html`, then the app's root
+`index.html` (SPA fallback). A client-side route therefore survives a hard refresh and a
+pasted deep link, and a no-build static app can instead ship real `companies/index.html`
+directories. Use whatever routing the scaffold provides; when retrofitting a small app,
+`history.pushState` plus a `popstate` listener covers a handful of sections.
+
+What goes where:
+
+- **Path** — which section, and which record is open (`/companies/acme`).
+- **Query string** — view state worth sharing or restoring: filters, sort, search, tab, page.
+- **Component state** — transient UI only: open dialogs, hover, unsaved form input.
+
+Because the fallback is unconditional, a wrong asset path never 404s — `/assets/mian.js`
+returns the root `index.html` with a `200`. The symptom is a MIME-type or `unexpected token
+'<'` console error, so check the path before debugging the bundle.
+
 ## State And Data Modeling
 
 Use Zustand or local React state for client state. Keep persisted data in Railcode

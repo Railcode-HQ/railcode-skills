@@ -21,6 +21,11 @@ calls same-origin URLs, app code needs no CORS config, no API URLs, and no crede
 backend scopes every `/_api/*` call server-side to `(org, app)` from the request's host +
 session — the app never names itself or its org in client code.
 
+App paths resolve like Caddy's `try_files`: the exact file, then `<path>/index.html`, then the
+app's root `index.html`. That last step is an unconditional SPA fallback, so client-side routes
+and deep links work with no config (a mistyped asset path also returns `index.html` with a
+`200`, not a `404`). `railcode dev` mirrors this, so local and deployed routing agree.
+
 Reserved subdomains (the dashboard/login parent, `api`, `admin`, etc.) cannot be app slugs.
 
 ## Auth And App Identity
