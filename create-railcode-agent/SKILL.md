@@ -1,7 +1,7 @@
 ---
 name: create-railcode-agent
 description: Build, test, publish, invoke, schedule, and update Railcode managed agents with the Railcode CLI. Use when creating an organization or personal managed agent, editing an agent manifest (JSON or YAML), running a draft or saved agent, investigating a run, managing its cron schedule, running it from Slack (@Railcode $agent), pairing it with a companion app, processing files in its sandbox, or using personal connectors (Gmail, Slack, ...) on behalf of one owner. Do not use for static Railcode apps, in-app LLM tool loops (llm.generate({ tools }) — see create-railcode-app), or general organization administration.
-version: 0.1.18
+version: 0.1.19
 ---
 
 # Create Railcode Agent
@@ -91,6 +91,67 @@ The planes compose: the app keeps its chat shell in the page and delegates heavy
 calling `agents.invoke`/`agents.start` from an LLM tool's `run` (the app manifest declares
 `agents: [name]`; this agent declares `app_files: [app]` to reach uploaded files).
 
+## Start From An Example
+
+Railcode ships worked, deployable examples at
+**https://github.com/Railcode-HQ/railcode-examples**. Read them to learn a pattern; copy one
+when it covers much of what the user is asking for. Each `agents/` example is a **companion app
+plus its agent manifests**, which is the shape most agent work takes.
+
+| Example | What it is | Showcases |
+| --- | --- | --- |
+| [`agents/pitch-deck`](https://github.com/Railcode-HQ/railcode-examples/tree/main/agents/pitch-deck) | An app for uploading company materials, paired with an agent that writes a polished pitch-deck PDF from them. | App-paired managed agents: `app_data`/`app_files` access, code execution, publishing runs back as tracked versions. |
+| [`agents/proposals`](https://github.com/Railcode-HQ/railcode-examples/tree/main/agents/proposals) | An app that imports Granola client meetings, paired with an agent that drafts editable `.docx` proposals from a meeting plus stored materials. | Personal connectors (Granola), cron-triggered agent runs, connector calls made directly from the app without an agent. |
+
+They pair an app with a managed agent because agents can't own files or storage directly — they
+work through an app they have data access to. The repo's `apps/` directory holds plain-app
+examples (kanban, data chat, CRM); reach for those through `$create-railcode-app`.
+
+**Ask, don't assume.** When the request substantially overlaps an example, put the choice in the
+step 1 scoping batch, naming the example in the user's own terms:
+
+> *"Railcode provides an example that already generates client proposals from meeting notes.
+> Should I use that as a starting point, or build from scratch?"*
+
+Ask once, alongside the other scoping questions. Never copy an example unprompted, and don't
+raise the question when nothing matches.
+
+### Copying an example
+
+Copy **only** the one directory, as plain files — never `git clone` the repo into the user's
+project, add it as a submodule, or leave a `.git` behind:
+
+```bash
+mkdir -p my-proposals
+curl -fsSL https://github.com/Railcode-HQ/railcode-examples/archive/refs/heads/main.tar.gz \
+  | tar -xz --strip-components=3 -C my-proposals railcode-examples-main/agents/proposals
+```
+
+`--strip-components=3` drops `railcode-examples-main/agents/<example>/`, so the example's files
+land directly in `my-proposals/`. Swap the trailing path for the other row above. To study one
+manifest without copying anything, fetch it raw from
+`https://raw.githubusercontent.com/Railcode-HQ/railcode-examples/main/agents/proposals/agents/proposal-writer/agent.yaml`.
+
+The agent manifests live at `agents/<agent-name>/agent.yaml`; the app around them is a normal
+Railcode app (`railcode.json` + `manifest.yaml`). Make the copy the user's own **before**
+authoring behavior:
+
+- Rename each `agents/<name>/` directory and the manifest's `name`, so the copy doesn't collide
+  with an agent that already exists in the org.
+- Point `tools.app_data` / `app_files` / `app_data_write` at the renamed companion app slug, and
+  keep `visibility` right for the tools declared (`personal_connectors` needs `personal`).
+- Cut every tool the new agent doesn't need — a copied manifest carries the example's authority,
+  not the narrowest set for this job — and re-size `limits` for the new workload.
+- Rewrite the `system` prompt and `input_schema` for the new contract; the example's prompt
+  encodes its own step-by-step procedure and input shape.
+- In the app: set `app` in `railcode.json`, rename `package.json`'s `name`, run `npm install`,
+  update the `agents:` list in `manifest.yaml` and every `agents.invoke`/`agents.start` call,
+  and replace the example's `README.md` if it ships one.
+
+Then test the draft (`railcode agent test --file …`) before creating anything, exactly as in the
+build workflow below. If the download fails, say so and build from scratch — don't reconstruct
+an example from memory.
+
 ## Build Workflow
 
 ### 1. Scope the agent
@@ -143,6 +204,9 @@ connect to it directly and ask which alternative source the user wants to use.
 - the model and tools it needs;
 - whether it runs on demand, from an app, on a schedule, or by Slack mention;
 - whether it needs a **companion app** (see [Companion Apps](#companion-apps));
+- whether to **start from an example** — when one in [Start From An Example](#start-from-an-example)
+  covers much of the request, ask: *"Railcode provides an example that already generates client
+  proposals from meeting notes. Should I use that as a starting point, or build from scratch?"*;
 - what real systems, data, spend, or side effects a test may touch;
 - **its visibility** — `org` (the default: shared, invokable by anyone with an invoke
   grant, managed by its creator or any admin) or `personal` (owned and invoked by its
@@ -184,7 +248,9 @@ railcode agent pull <agent> --output agent.json
 asks to see or store an agent's definition as YAML, convert that pulled JSON to YAML yourself
 and write `agent.yaml`; it round-trips back through `--file` unchanged.
 
-For a new agent, author the manifest in the current server-supported shape. **Ask the user
+For a new agent, author the manifest in the current server-supported shape — or, if the user
+chose an example in step 1, copy that example's `agent.yaml` and adapt it (see
+[Start From An Example](#start-from-an-example)). **Ask the user
 whether to save the definition in the current working directory.** If yes, write it there as
 YAML (`agent.yaml`) and feed that file to `test`/`create`; if no, keep it in a scratch
 location outside their project.
@@ -300,7 +366,9 @@ records someone must manage, or people need a place to trigger it and see its ou
 
 Name the app after the agent (e.g. agent `report-extractor`, app
 `report-extractor-console`), declare the narrowest slugs on both sides, and build the app
-with `$create-railcode-app`.
+with `$create-railcode-app`. The `agents/` rows in [Start From An Example](#start-from-an-example)
+are working versions of exactly this pairing — read or copy one instead of assembling it
+from scratch.
 
 ## Hard Limits
 
@@ -350,4 +418,6 @@ schedule behavior, inputs, outputs, and failure semantics. Read
 [manifest tools reference](references/manifest-tools.md) for the `tools.*` vocabulary,
 what each grants, its permission gate, and `limits`. Read
 [example agents](references/examples.md) for worked, runnable manifests covering a minimal
-agent and a scheduled query-to-email workflow.
+agent and a scheduled query-to-email workflow. For complete agent-plus-companion-app projects
+(pitch decks, client proposals), read or copy from `railcode-examples` — see
+[Start From An Example](#start-from-an-example).
