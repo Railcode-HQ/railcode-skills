@@ -1,7 +1,7 @@
 ---
 name: create-railcode-app
 description: Build, modify, debug, test, and deploy Railcode static apps end-to-end. Use when creating a Railcode app from an idea, scaffolding with the Railcode CLI, wiring the zero-config SDK globals, explaining Railcode auth/data "magic", testing with railcode dev, declaring app authority, understanding app access, or deploying an app. Do not use for managed-agent authoring or general organization administration.
-version: 0.1.40
+version: 0.1.41
 ---
 
 # Create Railcode App
@@ -51,6 +51,63 @@ delegate the file work through `agents.invoke()` / `agents.start()`.
 | "Run in the background, on a schedule, from Slack, or after the tab closes" | **Managed agent** invoked with `agents`, often with this app as its companion UI |
 | "Send a system-owned transactional email" | Platform `email.send()`; use a Gmail **personal connector** instead when mail must come from each user's own account |
 | "Call an arbitrary website/API" | First look for a service or personal connector; otherwise offer admin connector setup or a custom MCP personal connector—apps cannot fetch the open web directly |
+
+## Start From An Example
+
+Railcode ships worked, deployable examples at
+**https://github.com/Railcode-HQ/railcode-examples**. Read them to learn a pattern; copy one
+when it covers much of what the user is asking for.
+
+| Example | What it is | Showcases |
+| --- | --- | --- |
+| [`apps/kanban`](https://github.com/Railcode-HQ/railcode-examples/tree/main/apps/kanban) | A kanban board with drag-and-drop columns, a list view, and a command palette. | The plain static app: SDK globals, KV storage, Zustand state — no LLM or agents. |
+| [`apps/chat`](https://github.com/Railcode-HQ/railcode-examples/tree/main/apps/chat) | A chat interface over your connected data sources (Postgres text-to-SQL, PostHog HogQL). | Per-user scoped storage, streaming answers, auditable inline tool calls, file uploads. |
+| [`apps/crm`](https://github.com/Railcode-HQ/railcode-examples/tree/main/apps/crm) | A full CRM — companies, contacts, pipeline, activity, automations — with an **Ask AI** agent that can read and change anything a person could. | `llm.stream({ tools })` agent loops, human approval gating on writes, per-tab URL routing, managed agents deployed alongside an app. |
+
+The repo's `agents/` directory holds examples that pair an app with a **managed agent** — reach
+for those through `$create-railcode-agent` when the work needs one.
+
+**Ask, don't assume.** When the request substantially overlaps an example, put the choice in the
+step 1 question batch, naming the example in the user's own terms:
+
+> *"Railcode provides an example CRM that covers a lot of these points. Should I use that as a
+> starting point, or build from scratch?"*
+
+Ask once, alongside the other scoping questions. Never copy an example unprompted, and don't
+raise the question when nothing matches.
+
+### Copying an example
+
+Copy **only** the one directory, as plain files — never `git clone` the repo into the user's
+project, add it as a submodule, or leave a `.git` behind:
+
+```bash
+mkdir -p my-crm
+curl -fsSL https://github.com/Railcode-HQ/railcode-examples/archive/refs/heads/main.tar.gz \
+  | tar -xz --strip-components=3 -C my-crm railcode-examples-main/apps/crm
+```
+
+`--strip-components=3` drops `railcode-examples-main/apps/<example>/`, so the example's files
+land directly in `my-crm/`. Swap the trailing path for any row above (e.g.
+`railcode-examples-main/apps/chat`). To study one file without copying anything, fetch it raw
+from `https://raw.githubusercontent.com/Railcode-HQ/railcode-examples/main/<path>`.
+
+A copied example already contains `railcode.json` — it replaces `railcode init`, so don't
+scaffold over it. Make it the user's app **before** writing feature code:
+
+- `railcode.json` — set `app` to the new name (lowercase, digits, dashes).
+- `package.json` — rename `name`, then `npm install` (versions are exact pins with a lockfile).
+- `manifest.yaml` — delete every authority this app doesn't actually use (`llm`, `agents`,
+  `personal_connectors`, …). A copied manifest carries the example's authority, not the
+  narrowest set for this app. Re-validate with `railcode manifest validate`.
+- `agents/*/agent.yaml`, when present — rename each agent, update the app slug in its
+  `app_data`/`app_files`/`app_data_write`, and update the names in `manifest.yaml`'s `agents:`
+  list and in every `agents.invoke`/`agents.start` call, so the copy doesn't collide with an
+  agent that already exists in the org.
+- `README.md`, when the example ships one — retitle or replace; it describes the example.
+- Delete the views, stores, and components for features the user didn't ask for.
+
+If the download fails, say so and build from scratch — don't reconstruct an example from memory.
 
 ## Build Process (follow in order)
 
@@ -117,6 +174,10 @@ setup required), then let the user's choice determine the manifest authority.
   the app (Slack, schedule), or run unattended? Any yes → a **managed agent**, never the
   in-page LLM — see
   **In-Page LLM vs Managed Agents** below.
+- **Starting point** — when an example in **Start From An Example** covers much of the
+  request, ask whether to build on it: *"Railcode provides an example CRM that covers a lot
+  of these points. Should I use that as a starting point, or build from scratch?"* (drives
+  step 3)
 - **Design** — *"Should I use the default Railcode design system, or do you have a specific
   design direction?"* (drives step 2)
 - **Browser testing** — *"Should I test my changes in a browser before calling it done?"*
@@ -139,8 +200,10 @@ use the fallback in the **Visual Direction** section.
 
 ### 3. Build the app
 
-Scaffold and develop locally — see the **Core Workflow** and **Local Development**
-sections — following the **Implementation Rules**.
+If the user chose an example in step 1, copy that one directory and adapt it first — see
+**Start From An Example**. Otherwise scaffold with `railcode init`. Either way, develop
+locally — see the **Core Workflow** and **Local Development** sections — following the
+**Implementation Rules**.
 
 Always write or update the app's `manifest.yaml` beside `railcode.json`. Use `run_as: user`
 for pass-through apps with no privileged app authority, and `run_as: app` only when the app
@@ -193,6 +256,9 @@ Load only the reference needed for the task:
 - [Platform magic](references/platform-magic.md): how same-origin auth, `/_api/sdk.js`, app/org identity, access policies, KV/files, SQL, service connectors, LLM, and email work.
 - [App patterns](references/app-patterns.md): implementation patterns for React/Vite apps, using the SDK globals, data modeling, SQL, connectors, LLM, and frontend expectations.
 - [Deployment](references/deployment.md): `railcode deploy`, app access, and post-deploy verification.
+
+For full working apps — a kanban board, a data chat, a CRM with an in-page agent loop — read
+or copy from `railcode-examples`; see **Start From An Example** above.
 
 ## Implementation Rules
 
@@ -276,11 +342,25 @@ Do not quietly build an approximation that can't work.
 
 ## Visual Direction
 
-Treat the starter/template app as functional scaffolding, not a style guide. Do not copy its visual style into new apps unless the active design system calls for it.
+Treat the starter/template app as functional scaffolding, not a style guide. Do not copy its visual style into new apps unless the active design system calls for it. An example copied from `railcode-examples` is different — it ships a coherent internal-tool look you can keep building on — but still reconcile it with the active design system rather than assuming the example already matches it.
 
 If the user opted into the Railcode design system, fetch it first with `railcode design-system` (see Build Process step 2) and make the app follow it. When no design system is configured or reachable — or the user wants a different look — default to the Railcode design system: quiet internal-tool UI, neutral surfaces, compact controls, clear tables/lists, modest borders/radius, and restrained accent color.
 
 Apps must be responsive. Verify the main workflows work cleanly on desktop and mobile widths, with no overlapping text, clipped controls, or unusable tables.
+
+**Give every app a favicon.** These tools get pinned and left open in a row of tabs, so a
+default blank icon is a real cost. Draw a small **SVG** that says what the app is — a funnel for
+a pipeline, a board for a kanban, an envelope for an inbox — in the active design system's accent
+color, and link it from `index.html`:
+
+```html
+<link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+```
+
+Put the file in `public/favicon.svg` for the react template (Vite copies `public/` into the build
+output) or beside `index.html` for the no-build static template. Keep it readable at 16px: one
+shape, no fine detail, no lettering. Set a real `<title>` in the same file — it's the label next
+to that icon.
 
 Keep data ownership explicit: use `db.user` / `files.user` for private data and `db.role(uuid)` /
 `files.role(uuid)` for role data; do not simulate scopes with key or path prefixes. Use query

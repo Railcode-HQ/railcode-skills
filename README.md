@@ -14,6 +14,14 @@ work across Claude Code, Codex, Cursor, and other agents.
 | [`create-railcode-agent`](create-railcode-agent/SKILL.md) | Build, test, publish, invoke, and schedule organization or personal Railcode managed agents. |
 | [`manage-railcode-org`](manage-railcode-org/SKILL.md) | Administer apps, members, roles/grants, saved queries, connections, service connectors, analytics, and logs through the CLI. |
 
+## Examples
+
+Worked, deployable Railcode apps and agents live in
+[`Railcode-HQ/railcode-examples`](https://github.com/Railcode-HQ/railcode-examples). Each skill
+carries the slice it needs — `create-railcode-app` the `apps/` examples, `create-railcode-agent`
+the `agents/` ones — and tells agents to copy a single example directory (no git) when it covers
+what the user is asking for.
+
 ## Install
 
 Install or update all Railcode skills:
