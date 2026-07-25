@@ -1,7 +1,7 @@
 ---
 name: create-railcode-agent
 description: Build, test, publish, invoke, schedule, and update Railcode managed agents with the Railcode CLI. Use when creating an organization or personal managed agent, editing an agent manifest (JSON or YAML), running a draft or saved agent, investigating a run, managing its cron schedule, running it from Slack (@Railcode $agent), pairing it with a companion app, processing files in its sandbox, or using personal connectors (Gmail, Slack, ...) on behalf of one owner. Do not use for static Railcode apps, in-app LLM tool loops (llm.generate({ tools }) — see create-railcode-app), or general organization administration.
-version: 0.1.19
+version: 0.1.20
 ---
 
 # Create Railcode Agent
@@ -20,9 +20,13 @@ npm view railcode version
 
 If the skill changes, re-read this file from the top. If npm is unreachable, state that the
 latest version could not be verified and do not claim this guidance is current. This version
-was checked against published **Railcode CLI 0.1.27**. Agent input is free-form; the `system`
+was checked against published **Railcode CLI 0.1.28**. Agent input is free-form; the `system`
 prompt defines its contract. The backend validates manifest tools and limits, so save-time
 validation is authoritative over this snapshot.
+
+Since 0.1.28 the CLI self-updates within its major version — but only on an **interactive
+terminal**, and agent-driven sessions are non-interactive, so keep running the explicit
+`npm install -g railcode@latest` above rather than assuming you're on the latest.
 
 ## Map The Request To Railcode
 
@@ -267,6 +271,11 @@ Use `--input-file` for larger or sensitive test payloads. Testing invokes real c
 models and tools, so it may incur spend, read real data, or cause tool side effects. Get any
 needed authorization before running a side-effecting test.
 
+An agent that reads a companion app through `app_data`/`app_files` proves nothing against an
+empty app. Seed it first with `railcode app kv set <collection> <key> '<json>'` and
+`railcode app files upload <path>` (CLI 0.1.28+, app owner or org admin), using the shape the
+app itself writes, then clean up anything throwaway.
+
 Do not rely only on the process exit code: a request that reached the runtime can exit 0 even
 when the run's printed status is failed. Check `Status:` or inspect `--json`.
 
@@ -304,6 +313,22 @@ railcode agent show <agent> --manifest
 Confirm the saved manifest, run status, output, and relevant trace steps. For organization
 observability logs, use `$manage-railcode-org`; its `railcode logs agent ...` workflow is an
 admin capability rather than part of agent authoring.
+
+When the agent writes back through `tools.app_data_write`, a clean run status is not proof the
+data landed. Check the companion app's stores directly (CLI 0.1.28+, app owner or an org
+admin):
+
+```bash
+railcode app kv collections --app <app>              # collections + record counts
+railcode app kv list <collection> --app <app>        # what app_kv_set actually wrote
+railcode app files list --app <app>                  # what publish_artifact_to_app produced
+railcode app files download <name> --app <app>       # open the generated .docx/.pdf yourself
+```
+
+Add `--scope user --user <member-uuid>` or `--scope role --role <role-uuid>` to inspect a
+non-shared namespace; `--scope all` lists across every scope with owner attribution. This is
+also the fastest way to catch a **personal** agent writing into its owner's private scope when
+the team expected shared records.
 
 ### 6. Schedule only when requested
 
