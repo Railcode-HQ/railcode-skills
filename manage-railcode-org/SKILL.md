@@ -1,7 +1,7 @@
 ---
 name: manage-railcode-org
 description: Administer a Railcode organization through the Railcode CLI. Use for app access and ownership, members and system roles, custom roles and granular grants, saved-query publishing, data connections, service connectors, analytics, and org observability logs. Do not use for building static apps or authoring managed-agent manifests.
-version: 0.1.1
+version: 0.1.2
 ---
 
 # Manage Railcode Org
@@ -20,7 +20,11 @@ npm view railcode version
 
 If the skill changes, re-read this file from the top. If npm is unreachable, state that the
 latest version could not be verified and do not claim this guidance is current. This version
-was checked against published **Railcode CLI 0.1.27**.
+was checked against published **Railcode CLI 0.1.28**.
+
+Since 0.1.28 the CLI self-updates within its major version — but only on an **interactive
+terminal**, and agent-driven sessions are non-interactive, so keep running the explicit
+`npm install -g railcode@latest` above rather than assuming you're on the latest.
 
 ## Management Workflow
 
@@ -63,13 +67,20 @@ unrequested downstream side effects.
 ## Capability Boundaries
 
 - `members list` is readable by any member; member mutations require admin authority.
-- App list/show/access follow per-app visibility; set-access/transfer/delete require manage
-  rights (owner or org admin).
+- App list/show/access follow per-app visibility; set-access/transfer/archive/unarchive/delete
+  require manage rights (owner or org admin).
 - Roles, grants, connections, connector administration, analytics, and logs are capability-
   gated server-side.
 - `members add` is self-hosted provisioning and requires a password; do not expose it in logs
   or handoff text.
-- `apps delete` removes deploys and app data and is irreversible.
+- `apps delete` removes deploys and app data and is irreversible. `apps archive` is the
+  reversible alternative — the app keeps serving, keeps its data, and keeps running its
+  agents; it only leaves the launcher. Propose archiving whenever the user's goal is to
+  retire an app rather than destroy it.
+- `app kv` / `app files` (singular `app`) read and write a deployed app's records and files.
+  They need an owner grant or `app:manage_any`, and `set`/`delete`/`drop`/`upload` mutate live
+  tenant data — including individual members' private scopes. Inspect first; mutate only what
+  was asked for.
 - `roles materialize` expands a wildcard into explicit rows; inspect the subject and resource
   first because it changes future grant maintenance semantics.
 

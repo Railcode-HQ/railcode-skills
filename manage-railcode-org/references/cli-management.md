@@ -30,22 +30,54 @@ app or `railcode.json`. Most references accept a human-readable name/slug/email 
 ## Apps and Access
 
 ```bash
-railcode apps list
+railcode apps list [--archived|--all]
 railcode apps show <app>
 railcode apps access <app>
 railcode apps set-access <app> --mode organization
 railcode apps set-access <app> --mode private
 railcode apps set-access <app> --mode restricted --members alice@example.com,bob@example.com
 railcode apps transfer <app> --to <email|uuid>
+railcode apps archive <app>
+railcode apps unarchive <app>
 railcode apps delete <app> [--yes]
 ```
 
 `<app>` is a slug or UUID. Access modes are `organization` (every org member), `private`
 (owners), and `restricted` (owners plus explicit members). Org admins/owners bypass per-app
-access. `set-access`, `transfer`, and `delete` need app manage rights. Delete is irreversible,
-removes deploys and app data, prompts on a TTY, and requires `--yes` non-interactively.
+access. `set-access`, `transfer`, `archive`/`unarchive`, and `delete` need app manage rights.
+Delete is irreversible, removes deploys and app data, prompts on a TTY, and requires `--yes`
+non-interactively.
+
+**Archiving is inert and reversible**, so it never prompts: an archived app keeps serving at
+its host, keeps its slug, keeps its data, and keeps running its agents — it only drops out of
+the launcher. Reach for it instead of `delete` whenever the goal is "get this out of people's
+way". `list` hides archived apps by default; `--archived` shows only those, `--all` shows both,
+and an `archived` column appears in the table only when the listing actually contains one.
 
 `apps access` includes direct policy grants and access conferred through roles/grants.
+
+### App storage (owner or `app:manage_any`)
+
+```bash
+railcode app kv <collections|list|get|set|delete|drop> ... [--app <slug|uuid>]
+railcode app files <list|download|upload|delete> ... [--app <slug|uuid>]
+```
+
+Singular `app` (not `apps`) reads and writes a deployed app's KV records and files — useful
+for auditing what an app or its agents stored, exporting a file, or clearing a collection.
+Requires an owner grant on the app or an org admin holding `app:manage_any`; a member with
+mere app *access* is rejected. Without `--app` it resolves the app from `./railcode.json`,
+like `deploy`.
+
+Scope with `--scope shared|user|role` (default `shared`; `user`/`role` need `--user <uuid>` /
+`--role <uuid>`). `--scope all` enumerates every scope with owner attribution, but only for
+the listings — a record or file mutation must name one scope. `kv list` takes
+`--query '[[field,op,value]]'`, `--limit`/`--offset` (offset a whole multiple of limit), and
+`--count`; `kv set` takes inline JSON or `--file`; `kv drop` prompts on a TTY unless `--yes`.
+
+These are writes against live tenant data, including data owned by individual members. Read
+before you write, and don't mutate a store the user didn't ask you to touch. The full
+command-by-command surface is in `$create-railcode-app`'s CLI workflow reference.
 
 ## Members and System Roles
 
