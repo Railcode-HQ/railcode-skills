@@ -1,7 +1,7 @@
 ---
 name: create-railcode-agent
 description: Build, test, publish, invoke, schedule, and update Railcode managed agents with the Railcode CLI. Use when creating an organization or personal managed agent, editing an agent manifest (JSON or YAML), running a draft or saved agent, investigating a run, managing its cron schedule, running it from Slack (@Railcode $agent), pairing it with a companion app, processing files in its sandbox, or using personal connectors (Gmail, Slack, ...) on behalf of one owner. Do not use for static Railcode apps, in-app LLM tool loops (llm.generate({ tools }) — see create-railcode-app), or general organization administration.
-version: 0.1.20
+version: 0.1.21
 ---
 
 # Create Railcode Agent
@@ -254,7 +254,8 @@ and write `agent.yaml`; it round-trips back through `--file` unchanged.
 
 For a new agent, author the manifest in the current server-supported shape — or, if the user
 chose an example in step 1, copy that example's `agent.yaml` and adapt it (see
-[Start From An Example](#start-from-an-example)). **Ask the user
+[Start From An Example](#start-from-an-example)). Write the `system` prompt as described in
+[Writing The System Prompt](#writing-the-system-prompt). **Ask the user
 whether to save the definition in the current working directory.** If yes, write it there as
 YAML (`agent.yaml`) and feed that file to `test`/`create`; if no, keep it in a scratch
 location outside their project.
@@ -294,6 +295,8 @@ railcode agent update <agent> --file agent.yaml
 
 `update` replaces the stored manifest. Preserve fields intentionally by starting from
 `railcode agent pull`, and read all ratification warnings before considering the change done.
+While you're in the pulled manifest, audit the `system` prompt for debris left by earlier test
+rounds — see [Writing The System Prompt](#writing-the-system-prompt).
 
 `--visibility <org|personal>` on `create`/`update`/`test` sets or changes who the agent
 belongs to. Omit it on `create`/`test` for the default `org`; omit it on `update` to leave
@@ -346,6 +349,36 @@ mutation. `run-now` executes synchronously against real services.
 A scheduled run passes **null** input — there is no per-schedule payload. Write the `system`
 prompt so a run with no input knows exactly what to do. See
 [example agents](references/examples.md) (`daily-metrics-report`).
+
+## Writing The System Prompt
+
+The `system` prompt is the agent's whole contract: what job it owns, how to read its input,
+and what to return. Two habits keep it working as it evolves.
+
+**Prefer positive instruction.** Say what the agent *should* do rather than what it shouldn't.
+*"Quote figures only from the uploaded materials, and write a bracketed placeholder where one
+is missing"* gives the model something to aim at; *"don't invent figures"* forbids one path and
+leaves the rest to guesswork. This is an encouragement, not a rule — a real boundary (*"never
+email anyone outside the attendee list"*) is worth stating outright, and hard limits should
+stay hard. But when a "don't" is standing in for a "do", write the "do".
+
+**Audit the whole prompt on every update.** Each run reads the prompt cold. The agent has no
+memory of previous versions, earlier runs, or the bug being chased last week — so prompts
+accumulate debris that reads fine to us and misleads the agent:
+
+- **Corrections phrased as history** — *"We no longer do X, do Y instead."* This agent never
+  did X; the sentence introduces X and asks it to carry both. State only Y.
+- **Debug leftovers** — a temporary *"for now, only process the first three rows"*, or a
+  workaround for a bug that has since been fixed.
+- **Orphaned steps** — instructions naming a tool, app, connector, or field the manifest no
+  longer declares.
+- **The same rule three times** in slightly different words, each added during a different
+  test round. Restatements compete; keep the clearest one.
+
+So before `railcode agent update`, read the stored `system` end to end from
+`railcode agent pull` — not from memory of what you last wrote — and rewrite it as the
+procedure someone encountering it cold would follow. A system prompt should read as a
+specification, never as a changelog.
 
 ## Slack (On By Default)
 
