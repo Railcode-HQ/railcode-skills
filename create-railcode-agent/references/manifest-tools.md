@@ -96,11 +96,11 @@ sandboxing configured.
 
 | Field | Default | Max |
 |---|---|---|
-| `max_steps` | 100 | 100 |
-| `timeout_seconds` | 300 | 300 |
-| `max_tool_calls` | 100 | 200 |
-| `max_tokens_total` | 50000 | 2000000 |
-| `max_tokens_turn` | 50000 | 200000 |
+| `max_steps` | 300 | 300 |
+| `timeout_seconds` | 1200 | 1200 |
+| `max_tool_calls` | 300 | 600 |
+| `max_tokens_total` | 150000 | 6000000 |
+| `max_tokens_turn` | 150000 | 200000 |
 
 `max_tokens_total` is the cumulative run budget (input+output across all turns); `max_tokens_turn`
 is the per-turn output ceiling. `max_tokens` is accepted as a **legacy alias** for
@@ -121,8 +121,8 @@ model — every turn resends the conversation, and every tool result lands in it
 - **Document editing and file-analysis tasks use far more tokens than intuition
   suggests**: loaded file content, sandbox command output, and repeated re-reads all
   count against `max_tokens_total`, and a long rewritten document pushes
-  `max_tokens_turn`. Raise `max_tokens_total` into the hundreds of thousands (or beyond —
-  the ceiling is 2M) rather than leaving the 50k default, and raise `max_tokens_turn`
+  `max_tokens_turn`. Raise `max_tokens_total` into the millions when needed (the ceiling is
+  6M) rather than leaving the 150k default, and raise `max_tokens_turn`
   when the agent must emit a long output. `max_steps`/`timeout_seconds` already default
   to their maxima — tokens are the knob that needs sizing.
 - If a test run ends `limit_exceeded` (or stops at `max_steps`), raise the ceiling first —

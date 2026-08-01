@@ -47,8 +47,8 @@ draft run touches no data and has no side effects beyond model spend.
   expected fields (`text`, optional
   `max_bullets`) and says what to do when they're missing.
 - **Visibility** — `org` (the default); no `--visibility` flag needed.
-- **Non-defaults** — none. No `tools` (defaults to none) and no `limits` (defaults: 100
-  steps / 300 s / 50k total tokens — see [manifest-tools.md](manifest-tools.md); a later
+- **Non-defaults** — none. No `tools` (defaults to none) and no `limits` (defaults: 300
+  steps / 1200 s / 150k total tokens — see [manifest-tools.md](manifest-tools.md); a later
   example tunes them).
 - **Try it** (safe — no tools, no side effects):
   ```bash

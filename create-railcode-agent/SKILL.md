@@ -1,7 +1,7 @@
 ---
 name: create-railcode-agent
 description: Build, test, publish, invoke, schedule, and update Railcode managed agents with the Railcode CLI. Use when creating an organization or personal managed agent, editing an agent manifest (JSON or YAML), running a draft or saved agent, investigating a run, managing its cron schedule, running it from Slack (@Railcode $agent), pairing it with a companion app, processing files in its sandbox, or using personal connectors (Gmail, Slack, ...) on behalf of one owner. Do not use for static Railcode apps, in-app LLM tool loops (llm.generate({ tools }) — see create-railcode-app), or general organization administration.
-version: 0.1.21
+version: 0.1.22
 ---
 
 # Create Railcode Agent
@@ -436,7 +436,7 @@ in `$create-railcode-app` → "Limitations"):
 - **Reach the open web.** Sandbox egress is an allowlist (PyPI, npm, the presigned
   download host with `app_files`); the `connector` tool reaches only ratified endpoints.
   No scraping, no arbitrary APIs.
-- **Run long or continuously.** Runs are bounded — at most 100 steps / 300 s / the token
+- **Run long or continuously.** Runs are bounded — at most 300 steps / 1200 s / the token
   caps in `limits`. No daemons, no monitors; recurring work is a cron schedule.
 - **React to events.** Triggers are app/API call, cron, and Slack mention only — no
   data-change or inbound-webhook triggers.
