@@ -30,6 +30,14 @@ service.
   requested, ad-hoc SQL under `run_as: app`/`user`; it is uploaded and ratified as part of the deploy.
   For pass-through apps, use a minimal `run_as: user` manifest. See
   [cli-workflow.md](cli-workflow.md#app-manifest-authority).
+- **Project source** — the deploy also uploads the project's own source, so `railcode pull`
+  can bring it back later (new in CLI 0.1.32). It honors the project `.gitignore` plus a
+  built-in exclude list and the build-output dir; `--no-source` skips it. The source is
+  stored where it cannot be served.
+- **Version check** — the folder's `.railcode` marker makes the deploy conditional on the
+  version it was based on, so a deploy cannot silently erase work the caller has not pulled.
+  A stale base is a `409`; `--force` publishes over it. Deploy numbers count from 1 **per
+  app** (CLI 0.1.33). See [cli-workflow.md](cli-workflow.md#the-version-marker-railcode).
 - **Output resolution** — `railcode.json` `dist` wins (`"."` = no-build static); else
   `build` + `dist/`; else a `package.json` build script runs `<pm> run build` (your app's
   package manager — pnpm/yarn/bun by lockfile, else `npm`) and `dist/` is uploaded; else an

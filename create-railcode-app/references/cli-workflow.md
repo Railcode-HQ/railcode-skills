@@ -19,8 +19,9 @@ railcode login [--api-url <url>] [--paste|--no-browser]   Sign in (browser or pa
 railcode login --setup-token <token>          Non-interactive onboarding login (one-time setup token)
 railcode init <app> [dir] [--template static|react]   Scaffold an app (into ./<app>/, or an existing dir)
 railcode dev [--port <n>] [--asset-port <n>] [--reset]   Run the app locally against an emulated /_api
-railcode deploy [--private]                   Build (if configured) and deploy the app here
-railcode design-system                        Print your org's design-system guidance (markdown)
+railcode deploy [--private] [--no-source] [--force]   Build (if configured) and deploy the app here
+railcode pull [<deploy>] [--app <slug>] [--dir <path>] [--force]   Download a deploy's stored project source
+railcode design-system [get|set] ...          Print the org's design-system guidance, or replace it (set: admin)
 railcode db <list|query> ...                  List data connectors / run ad-hoc SQL
 railcode query <list|run> ...                List/invoke saved queries by name
 railcode connector <list|docs|fetch> ...     Inspect/call service connectors
@@ -192,7 +193,25 @@ railcode design-system
 
 Prints your org's configured design-system markdown straight to stdout (so it pipes/feeds
 cleanly into an agent). Needs a logged-in CLI; resolves the server like every other command.
-Returns empty when no admin has configured a design system for the org.
+Returns empty when no admin has configured a design system for the org. `railcode
+design-system get` is the explicit spelling of the same read.
+
+An admin with **design-system manage** can also replace the guidance (new in CLI 0.1.31):
+
+```bash
+railcode design-system set --file brand.md          # from a file
+cat brand.md | railcode design-system set           # from stdin
+railcode design-system set --markdown "# Brand ..."  # inline
+```
+
+`set` reads the markdown from exactly one source, preferred in that order: `--file`, then
+`--markdown`, then piped stdin. An empty file or empty pipe is **refused** rather than
+silently wiping the guidance; clear it deliberately with `--markdown=""`.
+
+Optionally record which dashboard template and brand pair produced the markdown, so the
+picker can restore itself — `--template <slug> --primary <hex> --accent <hex>`. Pass all
+three or none; provenance is replaced wholesale on every `set`, never merged. Omitting the
+trio marks the guidance hand-written ("custom").
 
 ## Query Data Connectors
 
@@ -352,7 +371,7 @@ call.
 ## Deploy An App With The CLI
 
 ```bash
-railcode deploy [--private]
+railcode deploy [--private] [--no-source] [--force]
 ```
 
 Deploy behavior:
@@ -374,6 +393,16 @@ Deploy behavior:
   ratification outcome (see [App Manifest](#app-manifest-authority)).
 - Uses the saved API token (or `RAILCODE_API_TOKEN`); clears the token and asks you to log in
   again on `401`.
+- Also uploads the **project source** alongside the built files, so a later `railcode pull`
+  can bring it back (new in CLI 0.1.32). The source respects the project's `.gitignore`, plus
+  a built-in exclude list (`node_modules`, `.git`, `dist`, `build`, `__pycache__`, `.venv`,
+  `.DS_Store`, `.railcode`) and the resolved build-output dir. `--no-source` skips it. The CLI
+  mirrors the server's default caps — 20 MB of source in total, 25 MB per file, 1000 files —
+  so an oversized tree fails **before** the upload starts. An instance may configure lower
+  values, in which case the server rejects what the CLI allowed.
+- Sends the folder's recorded base version so the deploy is **conditional** — see
+  [The Version Marker](#the-version-marker-railcode). `--force` deploys over a version
+  someone else has moved past.
 - Prints the live URL `http://<app>.<org>.<serving-domain>/` after upload.
 
 Deploy output resolution order:
@@ -387,6 +416,56 @@ Deploy output resolution order:
    `"dist": "."`.
 
 The `railcode.json` schema is `{ app, build?, dist?, dev?: { root?, command?, port? } }`.
+
+## The Version Marker (`.railcode`)
+
+Every successful deploy and every `railcode pull` writes a small JSON file, `.railcode`, into
+the project folder (new in CLI 0.1.32). It records which deploy the folder currently matches:
+
+```json
+{ "api_url": "…", "org_uuid": "…", "app": "demo", "app_uuid": "…", "deploy": 3 }
+```
+
+The next deploy sends that number back, and the server refuses to publish over work the
+caller has not seen — an `If-Match` for deploys. Without it, two people who both pull the
+same tree and both deploy would have the second silently erase the first.
+
+- **Deploy numbers count from 1 per app** (new in CLI 0.1.33 + the matching server). An app's
+  history starts at `#1` no matter what else the instance has deployed, and `#3` in one app
+  says nothing about any other app.
+- The marker is **scoped**. The CLI sends the base version only when the instance, org and
+  app slug all match the deploy target, so a copied or re-pointed folder deploys
+  unconditionally instead of claiming a base in another app's history. It also sends the
+  recorded app uuid, and the server refuses a mismatch.
+- A stale base gives a **409** that names the live version, who moved it, and when. Run
+  `railcode pull`, then deploy again — or `railcode deploy --force` to publish over it.
+- A base the app does not have gives a **422** naming the app's real range.
+- `railcode init` adds `.railcode` to `.gitignore`. It is local state about one folder, so a
+  colleague's `git clone` must not receive a stale one. Deleting it is always safe: the next
+  deploy is simply unconditional.
+- It is never uploaded as a servable file and never packed into the source bundle it helps
+  build.
+
+## Pull A Deploy's Source
+
+```bash
+railcode pull [<deploy>] [--app <slug>] [--dir <path>] [--force]
+```
+
+Downloads the source tree stored with a deploy — the live one by default, or the deploy
+number you name. Behavior:
+
+- `--app <slug>` picks the app (default: the `"app"` in `./railcode.json`); `--dir <path>`
+  picks where to write (default: the current directory).
+- Existing local files are **only** overwritten with `--force`, and the command lists which
+  ones differ before it refuses. Files the deploy does not contain are left alone; nothing is
+  ever deleted.
+- Afterwards the folder records the deploy it now matches, so the next deploy is checked
+  against it.
+- A deploy made with `--no-source`, or one whose files have aged out of the retention window,
+  answers that there is nothing to pull.
+- Requires a server with deploy source-history endpoints. Older servers keep accepting
+  deploys but cannot answer pull requests.
 
 ## App Access
 

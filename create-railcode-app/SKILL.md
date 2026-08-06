@@ -1,7 +1,7 @@
 ---
 name: create-railcode-app
 description: Build, modify, debug, test, and deploy Railcode static apps end-to-end. Use when creating a Railcode app from an idea, scaffolding with the Railcode CLI, wiring the zero-config SDK globals, explaining Railcode auth/data "magic", testing with railcode dev, declaring app authority, understanding app access, or deploying an app. Do not use for managed-agent authoring or general organization administration.
-version: 0.1.42
+version: 0.1.43
 ---
 
 # Create Railcode App
@@ -19,7 +19,10 @@ npm view railcode version
 ```
 
 If the skill changes, re-read this file from the top. If npm is unreachable, say so and do not
-claim the guidance is current. This version was checked against published **CLI 0.1.28**.
+claim the guidance is current. This version was written against **CLI 0.1.33** — the CLI
+source in the `railcode-multi-tenant` repo. npm's published `latest` was **0.1.28** when this
+was written, so `railcode pull`, the `.railcode` version marker and per-app deploy numbers are
+documented from the source and reach users only once 0.1.33 ships to npm.
 
 Since 0.1.28 the CLI self-updates within its major version — but only on an **interactive
 terminal**, and agent-driven sessions are non-interactive, so keep running the explicit
