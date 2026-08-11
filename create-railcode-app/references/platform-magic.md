@@ -120,11 +120,18 @@ Access governs **who, within the app's org, may open the app** — distinct from
 An app's `access_mode` is one of:
 
 - **`organization`** — every org member (the **default** for a newly created/deployed app).
-- **`private`** — owners only.
-- **`restricted`** — owners plus explicitly-granted members.
+- **`private`** — owners and editors only.
+- **`restricted`** — owners and editors, plus explicitly-granted members.
+
+Grants are **owner**, **editor**, or **member** (viewer). The editor tier (CLI 0.1.35 + the
+matching server) is a co-deploy right, not an audience share: an editor may deploy, revert,
+pull source, and read analytics, may open the app in **every** mode, and keeps that grant
+across mode changes — but cannot delete, archive, transfer, or change the access mode. Editors
+may add/remove individual **viewers** while the app is `restricted`.
 
 Org admins/owners **bypass** per-app access — they see and manage every app in the org.
-Access is read/set in the **admin UI** or with `railcode apps access` / `set-access`.
+Access is read/set in the **admin UI** or with `railcode apps access` / `set-access` /
+`add-editor` / `add-viewer`. The `AppOut` payload carries both `can_manage` and `can_edit`.
 
 `appUsers()` returns the app's org members (`{ uuid, name, email, is_admin }`) without custom
 role memberships; use it for assignee pickers, mentions, and display, not as an authorization

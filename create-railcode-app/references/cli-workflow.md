@@ -30,8 +30,11 @@ railcode llm <providers|models>               List the LLM providers/models apps
 railcode manifest <validate|show> ...         Validate manifest.yaml / show an app's ratified authority manifest
 railcode app kv <collections|list|get|set|delete|drop> ...   Read/write the deployed app's KV store (owner)
 railcode app files <list|download|upload|delete> ...   Read/write the deployed app's files (owner)
+railcode apps show <app>                      Show one app's details, incl. your own rights
 railcode apps access <app>                    Inspect the deployed app's access policy
-railcode apps set-access <app> ...            Set access when the builder has manage rights
+railcode apps set-access <app> ...            Set mode/members/editors (manage rights)
+railcode apps add-editor|remove-editor <app> <email|uuid>   Grant/revoke co-deploy rights (manage)
+railcode apps add-viewer|remove-viewer <app> <email|uuid>   Grant/revoke view rights (edit; restricted only)
 railcode --version
 railcode --help
 ```
@@ -395,11 +398,24 @@ Deploy behavior:
   again on `401`.
 - Also uploads the **project source** alongside the built files, so a later `railcode pull`
   can bring it back (new in CLI 0.1.32). The source respects the project's `.gitignore`, plus
-  a built-in exclude list (`node_modules`, `.git`, `dist`, `build`, `__pycache__`, `.venv`,
-  `.DS_Store`, `.railcode`) and the resolved build-output dir. `--no-source` skips it. The CLI
+  a built-in exclude list (broadened in **CLI 0.1.34**, matched by exact name at any depth)
+  and the resolved build-output dir. `--no-source` skips it. The CLI
   mirrors the server's default caps — 20 MB of source in total, 25 MB per file, 1000 files —
   so an oversized tree fails **before** the upload starts. An instance may configure lower
   values, in which case the server rejects what the CLI allowed.
+  - The exclude list covers vendored deps and build output (`node_modules`, `.venv`, `venv`,
+    `dist`, `build`), VCS internals (`.git`, `.hg`, `.svn`), framework/tool caches (`.vite`,
+    `.next`, `.nuxt`, `.svelte-kit`, `.astro`, `.turbo`, `.parcel-cache`, `.cache`, `.output`,
+    `.wrangler`, `.vercel`, `.netlify`, `__pycache__`, `.pytest_cache`, `.mypy_cache`,
+    `.ruff_cache`, `.tox`, `.eggs`, `.ipynb_checkpoints`, `coverage`, `.nyc_output`),
+    agent/local tool state (`.gstack`, `.playwright-mcp`), editor and OS debris (`.vscode`,
+    `.idea`, `.DS_Store`, `Thumbs.db`, `desktop.ini`), package-manager debug logs, and the
+    `.railcode` marker.
+  - **Env files never ship** — `.env`, `.env.local`, `.env.development.local`,
+    `.env.production.local` are excluded even when `.gitignore` misses them. Exact names only,
+    so `.env.example` still ships.
+  - **`.claude/` ships on purpose**: its skills and instructions are useful to whoever pulls
+    the source and continues the work.
 - Sends the folder's recorded base version so the deploy is **conditional** — see
   [The Version Marker](#the-version-marker-railcode). `--force` deploys over a version
   someone else has moved past.
@@ -438,7 +454,8 @@ same tree and both deploy would have the second silently erase the first.
   unconditionally instead of claiming a base in another app's history. It also sends the
   recorded app uuid, and the server refuses a mismatch.
 - A stale base gives a **409** that names the live version, who moved it, and when. Run
-  `railcode pull`, then deploy again — or `railcode deploy --force` to publish over it.
+  `railcode pull`, then deploy again — or `railcode deploy --force` to publish over it. See
+  [Working In A Shared App](#working-in-a-shared-app) before forcing: that 409 is a colleague.
 - A base the app does not have gives a **422** naming the app's real range.
 - `railcode init` adds `.railcode` to `.gitignore`. It is local state about one folder, so a
   colleague's `git clone` must not receive a stale one. Deleting it is always safe: the next
@@ -478,15 +495,90 @@ ownership and organization administration:
 railcode apps access <app>                          # show the current mode + per-user grants
 railcode apps set-access <app> --mode private       # or: organization | restricted
 railcode apps set-access <app> --mode restricted --members alice@x.io,bob@x.io
+railcode apps set-access <app> --mode organization --editors dana@x.io   # editors: any mode
 ```
-Modes: `organization` (every org member, the default), `private` (owners only), `restricted`
-(owners plus explicitly-granted members). Org admins/owners bypass per-app access entirely.
+Modes: `organization` (every org member, the default), `private` (owners + editors),
+`restricted` (owners + editors, plus explicitly-granted members). Org admins/owners bypass
+per-app access entirely.
 See [platform-magic.md](platform-magic.md) for the access model.
+
+Grants come in **three tiers** — owner, **editor**, member (viewer):
+
+| Tier | Can | Cannot |
+| --- | --- | --- |
+| owner | everything below, plus delete/archive/transfer/set-access, and `app kv`/`app files` | — |
+| **editor** (new in CLI 0.1.35) | deploy, read/revert deploy history, `pull` source, read analytics, read the access policy, add/remove **viewers** | delete, archive, transfer, change the mode, change the editor list, `app kv`/`app files` |
+| member (viewer) | open the app while it is `restricted` | anything else |
+
+Editors are **working rights, not an audience share**: an editor can open the app in *every*
+mode, and their grant survives mode changes. `railcode apps access` prints the grants grouped
+by tier for exactly this reason — do not read the editor list as "who can view this".
+
+```bash
+railcode apps add-editor <app> dana@x.io       # atomic; never rewrites the rest of the policy
+railcode apps remove-editor <app> dana@x.io
+railcode apps add-viewer <app> sam@x.io        # restricted mode only — a 400 otherwise
+railcode apps remove-viewer <app> sam@x.io
+```
+
+Prefer the atomic `add-editor`/`remove-editor` over `set-access --editors` when you are
+granting one person: `set-access` rewrites the whole policy and can race a concurrent edit.
+
+- **`--editors` absent vs empty is a real distinction.** Omitting `--editors` leaves the
+  server's editor list **alone**; `--editors ""` **clears** it. Same for `--members`.
+  (Empty-string flag values only parse correctly on **CLI 0.1.35+** — an earlier CLI rejects
+  `--editors ""` with "requires a value".)
+- **`add-viewer`/`remove-viewer` are edit-gated**, so an editor can choose who else may view
+  the app they work on — but only while the app is `restricted`, since a viewer grant is inert
+  in any other mode.
+- Transferring ownership **demotes the previous owner to editor** rather than cutting them off.
 
 The only deploy-time control is `railcode deploy --private`: a **one-shot** action that sets
 `mode: private` on that deploy and nothing more (it doesn't persist a flag anywhere, so a
 later plain `railcode deploy` won't re-assert it — flip access back in the dashboard and it
 stays flipped). There is no persisted `private` key in `railcode.json`.
+
+## Working In A Shared App
+
+Since the editor tier (CLI 0.1.35) an app can have **several people deploying it**, so do not
+assume the app you are working on is yours alone. When you did not create the app in this
+session, establish your rights before you act:
+
+```bash
+railcode apps show <app>      # prints `your role`, `can manage`, `can edit`
+```
+
+`can edit` is what governs `deploy` / history / `revert` / `pull`; `can manage` governs
+delete, archive, transfer, and the access mode. Treat a `403` on one of those as a **real
+authority boundary** — report it and ask, rather than routing around it (there is no
+route around it) or retrying with different flags.
+
+Working rules in a shared app:
+
+- **Pull before you deploy.** Your folder may be behind. A `409` on deploy is not a
+  malfunction — it means a colleague published after your last sync, and the message names
+  the live version, who moved it, and when. The correct response is `railcode pull` then
+  `railcode deploy`.
+- **`--force` overwrites a teammate's deploy.** It is the "I know, publish anyway" escape
+  hatch, and it marks the history row as knowingly deploying over a conflict. Never reach for
+  it to clear a 409 on your own initiative — pull, look at what changed, and ask the user
+  before forcing. (A `422` is different: the folder's marker names a deploy the app does not
+  have, e.g. a copied folder. `railcode pull` resyncs it; deleting `.railcode` makes the next
+  deploy unconditional.)
+- **Don't merge blind.** `railcode pull` will not overwrite differing local files without
+  `--force`; it lists them instead. That list is a genuine divergence between your work and
+  what is live — read it before deciding, and never blanket-`--force` a pull that reports
+  conflicts in files you edited.
+- **Editors cannot administer app storage.** `railcode app kv` / `railcode app files` stay
+  **owner-or-admin**; an editor gets a `403`. To verify a write as an editor, use the app's
+  own UI.
+- **Never commit `.railcode`.** It is per-folder sync state, and a stale one handed to a
+  colleague makes their next deploy claim a base that isn't theirs. `railcode init` gitignores
+  it; if you scaffolded some other way, add it yourself.
+- **Source you push is read by whoever pulls next.** The deploy ships `.claude/` on purpose so
+  the next person (or agent) inherits the app's skills and instructions — worth keeping
+  accurate. It never ships `.env`, `.env.local`, `.env.development.local`, or
+  `.env.production.local`, even when `.gitignore` misses them; `.env.example` does ship.
 
 ## Inspect And Seed App Storage
 
@@ -516,7 +608,8 @@ under `~/.railcode/dev/<instance>/<app>/` and are only cleared with `railcode de
 - **App resolution** — `--app <slug|uuid>`, else the `railcode.json` in the current directory,
   exactly like `deploy`.
 - **Ownership required** — an app owner grant, or an org admin holding `app:manage_any`. A
-  plain member with app *access* is rejected; that's an authority boundary, not a bug.
+  plain member with app *access* is rejected, and so is an **editor**: the editor tier confers
+  deploy rights, not storage administration. That's an authority boundary, not a bug.
 - **Scope** — `--scope shared|user|role` (default `shared`), with `--user <member-uuid>` or
   `--role <role-uuid>` required for those two. `--scope all` enumerates every scope with owner
   attribution but **only for the listings** (`kv collections`, `kv list`, `files list`); any

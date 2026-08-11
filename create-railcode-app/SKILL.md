@@ -1,7 +1,7 @@
 ---
 name: create-railcode-app
 description: Build, modify, debug, test, and deploy Railcode static apps end-to-end. Use when creating a Railcode app from an idea, scaffolding with the Railcode CLI, wiring the zero-config SDK globals, explaining Railcode auth/data "magic", testing with railcode dev, declaring app authority, understanding app access, or deploying an app. Do not use for managed-agent authoring or general organization administration.
-version: 0.1.43
+version: 0.1.44
 ---
 
 # Create Railcode App
@@ -19,10 +19,11 @@ npm view railcode version
 ```
 
 If the skill changes, re-read this file from the top. If npm is unreachable, say so and do not
-claim the guidance is current. This version was written against **CLI 0.1.33** — the CLI
-source in the `railcode-multi-tenant` repo. npm's published `latest` was **0.1.28** when this
-was written, so `railcode pull`, the `.railcode` version marker and per-app deploy numbers are
-documented from the source and reach users only once 0.1.33 ships to npm.
+claim the guidance is current. This version was written against **CLI 0.1.35** — the CLI
+source in the `railcode-multi-tenant` repo — and npm's published `latest` was **0.1.35** when
+this was written, so the source and the published binary agree. The app **editor** tier and
+empty-string flag values (`--editors ""`) require 0.1.35; on an older server the CLI's new
+access fields are ignored rather than failing.
 
 Since 0.1.28 the CLI self-updates within its major version — but only on an **interactive
 terminal**, and agent-driven sessions are non-interactive, so keep running the explicit
@@ -422,7 +423,13 @@ the live URL. A new app defaults to organization-wide access; use `railcode depl
 for a private first deploy or set the intended policy explicitly afterward. Read
 [Deployment](references/deployment.md) for resolution, access modes, and verification.
 
+**If you did not create this app, you may not be its only deployer.** Apps can carry
+**editors** — a co-deploy tier — so check your rights with `railcode apps show <app>`
+(`can edit` / `can manage`), `railcode pull` before deploying, and treat a deploy `409` as a
+colleague who published after your last sync rather than something to `--force` past. See
+[Working In A Shared App](references/cli-workflow.md#working-in-a-shared-app).
+
 To check what the live app actually stored — or to seed records and files into it — use
-`railcode app kv` / `railcode app files` (app owner or an org admin; see
+`railcode app kv` / `railcode app files` (app owner or an org admin — **not** editors; see
 [CLI workflow](references/cli-workflow.md#inspect-and-seed-app-storage)). `set`, `delete`,
 `drop`, and `upload` write real tenant data, so only run them when the user asked for it.

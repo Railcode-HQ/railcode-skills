@@ -32,8 +32,9 @@ service.
   [cli-workflow.md](cli-workflow.md#app-manifest-authority).
 - **Project source** — the deploy also uploads the project's own source, so `railcode pull`
   can bring it back later (new in CLI 0.1.32). It honors the project `.gitignore` plus a
-  built-in exclude list and the build-output dir; `--no-source` skips it. The source is
-  stored where it cannot be served.
+  built-in exclude list (broadened in CLI 0.1.34 to cover tool/framework caches, editor and OS
+  debris, and **env files** — `.env.example` still ships, `.claude/` ships on purpose) and the
+  build-output dir; `--no-source` skips it. The source is stored where it cannot be served.
 - **Version check** — the folder's `.railcode` marker makes the deploy conditional on the
   version it was based on, so a deploy cannot silently erase work the caller has not pulled.
   A stale base is a `409`; `--force` publishes over it. Deploy numbers count from 1 **per
@@ -56,11 +57,18 @@ the one-shot `railcode deploy --private` above.
 Modes:
 
 - `organization` — every org member (default).
-- `private` — owners only.
-- `restricted` — owners plus explicitly-granted members.
+- `private` — owners and editors only.
+- `restricted` — owners and editors, plus explicitly-granted members.
 
 Org admins/owners bypass per-app access (they manage every app). A user who lacks access
 sees a 404, not a 403.
+
+An app can also have **editors** (CLI 0.1.35): a co-deploy tier that may deploy, revert, pull
+source, and read analytics in any mode, but may not delete, archive, transfer, or change the
+mode. If you are deploying an app you did not create, check your own rights with
+`railcode apps show <app>` (`can edit` / `can manage`) and read
+[Working In A Shared App](cli-workflow.md#working-in-a-shared-app) — it covers pulling before
+you deploy and why a `409` should not be `--force`d away.
 
 ## Post-Deploy Verification
 
