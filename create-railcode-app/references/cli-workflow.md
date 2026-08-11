@@ -572,6 +572,20 @@ Working rules in a shared app:
 - **Editors cannot administer app storage.** `railcode app kv` / `railcode app files` stay
   **owner-or-admin**; an editor gets a `403`. To verify a write as an editor, use the app's
   own UI.
+- **The manifest is ratified against *your* authority, on the diff.** Being an editor does not
+  confer the app's declared authority. Deploying an **unchanged** manifest always works, no
+  matter what you personally hold, and a diff that only *removes* operations auto-applies. But
+  a deploy whose diff **adds** an operation you don't hold is rejected up front with a `403`:
+  *"This deploy adds authority you don't hold: …"*. Nothing is published — get the grant, or
+  drop the operation from `manifest.yaml`. Also note `railcode deploy` needs the org-level
+  `app:deploy` capability in your role; an editor grant on its own is not enough.
+- **Never deploy from a tree that is missing `manifest.yaml`.** A manifest absent from the
+  uploaded tree reads as *removed*, and removal only sheds authority, so it **auto-applies** —
+  no permission required, no block. The app silently drops to pass-through (`run_as: user`)
+  and every declared grant is shed. The only signal is one deploy line: `Manifest removed —
+  the app is back to pass-through`. This is the likeliest way to break a shared app, so
+  confirm the manifest is present (and current) before you deploy someone else's app — another
+  reason to `railcode pull` first.
 - **Never commit `.railcode`.** It is per-folder sync state, and a stale one handed to a
   colleague makes their next deploy claim a base that isn't theirs. `railcode init` gitignores
   it; if you scaffolded some other way, add it yourself.
@@ -684,7 +698,7 @@ Commands:
 
 ```bash
 railcode manifest validate [path]   # strict local parse (default ./manifest.yaml)
-railcode manifest show <app>        # the app's ratified doc + any pending diff (by slug); --json
+railcode manifest show <app>        # the app's ratified doc (by slug); --json for raw
 ```
 
 - `manifest validate` parses the file with the **same strict YAML grammar the server uses**
@@ -692,13 +706,24 @@ railcode manifest show <app>        # the app's ratified doc + any pending diff 
   resolves to a non-string and is rejected where a name is expected). It prints a summary of
   the declared operations; resource **names** (queries, connectors, connections, agents) are
   only checked against your org at deploy.
-- **On deploy**, the manifest is ratified against the deployer's own grants: operations you
-  already hold ratify immediately; operations you **don't** hold land as a **pending diff
-  awaiting approval** by someone who does. Deploy prints the outcome (`ratified` / `unchanged`
-  / `removed`, plus any pending additions). Deleting the file reverts the app to pass-through,
-  but agents should keep an explicit `run_as: user` manifest unless the user asks to remove it.
+- **On deploy**, the manifest is ratified against the deployer's own grants — and the unit is
+  the **diff** against what is already ratified, not the whole document:
+  - *unchanged* (the content hash matches) → deploys as ordinary code, whatever you hold.
+  - diff **adds** operations you hold, and/or only **removes** operations → **auto-ratifies**
+    on the spot.
+  - diff adds an operation you **don't** hold → the deploy is **rejected up front** with a
+    `403`: *"This deploy adds authority you don't hold: `<ops>`."* Nothing is published — get
+    the grant, or drop the operation from `manifest.yaml`. There is **no** pending-approval
+    queue for this; blocking replaced it.
+
+  Deploy prints the outcome (`Manifest unchanged.` / `Manifest ratified (you hold: …)` /
+  `Manifest removed — …`). Deleting the file reverts the app to pass-through, but agents
+  should keep an explicit `run_as: user` manifest unless the user asks to remove it.
+- Only a `run_as: app` manifest grants anything, so a `run_as: user` manifest never needs
+  ratification. Flipping `user` → `app` is therefore a **full** grant-add (you must hold
+  everything declared); flipping `app` → `user` sheds it all and auto-applies.
 - `manifest show` needs login and app access (403 otherwise); it prints who ratified the
-  current doc, its content hash, and any pending additions.
+  current doc and its content hash.
 - `adhoc_sql` grants raw SQL authority and is intentionally scarce. Do not add it unless the
   user explicitly requested direct/ad-hoc SQL; otherwise use `saved_queries`.
 - `personal_connectors` is unlike every other key above: it does **not** ratify against the
