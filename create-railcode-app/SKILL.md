@@ -1,7 +1,7 @@
 ---
 name: create-railcode-app
 description: Build, modify, debug, test, and deploy Railcode static apps end-to-end. Use when creating a Railcode app from an idea, scaffolding with the Railcode CLI, wiring the zero-config SDK globals, explaining Railcode auth/data "magic", testing with railcode dev, declaring app authority, understanding app access, or deploying an app. Do not use for managed-agent authoring or general organization administration.
-version: 0.1.45
+version: 0.1.46
 ---
 
 # Create Railcode App
@@ -19,11 +19,19 @@ npm view railcode version
 ```
 
 If the skill changes, re-read this file from the top. If npm is unreachable, say so and do not
-claim the guidance is current. This version was written against **CLI 0.1.35** — the CLI
-source in the `railcode-multi-tenant` repo — and npm's published `latest` was **0.1.35** when
-this was written, so the source and the published binary agree. The app **editor** tier and
-empty-string flag values (`--editors ""`) require 0.1.35; on an older server the CLI's new
-access fields are ignored rather than failing.
+claim the guidance is current. This version was written against **CLI 0.1.36** — the CLI
+source in the `railcode-multi-tenant` repo.
+
+**The source is ahead of npm.** npm's published `latest` was **0.1.35** when this was
+written, so `npm install -g railcode@latest` does *not* yet give you 0.1.36. Everything
+marked 0.1.36+ below — `railcode ci github`, `railcode token`, and `RAILCODE_ORG_UUID`
+— is absent from the published binary, and a CI job on 0.1.35 fails with *"No
+organization on file"* however valid its token. Check `railcode --version` against
+`npm view railcode version` before relying on those; if you are on 0.1.35, say so
+rather than assuming the commands exist.
+
+The app **editor** tier and empty-string flag values (`--editors ""`) require 0.1.35; on
+an older server the CLI's new access fields are ignored rather than failing.
 
 Since 0.1.28 the CLI self-updates within its major version — but only on an **interactive
 terminal**, and agent-driven sessions are non-interactive, so keep running the explicit
@@ -227,7 +235,11 @@ done.
 
 ### 5. Deploy (when the user wants it live)
 
-Publish with `railcode deploy` — see the **Deployment** section.
+Publish with `railcode deploy` — see the **Deployment** section. To deploy on every
+push instead, run `railcode ci github` in the project (CLI 0.1.36+): it mints an
+app-scoped **deploy token**, sets it as the repo secret via `gh`, and writes the
+workflow. Never put a personal token in CI — see
+[Deploy From CI](references/cli-workflow.md#deploy-from-ci-github-actions).
 
 ## Core Workflow
 

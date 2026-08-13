@@ -6,6 +6,7 @@
 - Create and develop an app
 - Use app-facing data, saved-query, connector, and LLM commands
 - Deploy and set app access
+- Deploy from CI with an app-scoped deploy token
 - Validate the app authority manifest
 
 Use this reference for exact Railcode CLI behavior relevant to building, testing, and
@@ -35,6 +36,8 @@ railcode apps access <app>                    Inspect the deployed app's access 
 railcode apps set-access <app> ...            Set mode/members/editors (manage rights)
 railcode apps add-editor|remove-editor <app> <email|uuid>   Grant/revoke co-deploy rights (manage)
 railcode apps add-viewer|remove-viewer <app> <email|uuid>   Grant/revoke view rights (edit; restricted only)
+railcode ci github [--repo <owner/name>] [--branch <name>]   Wire the app up to deploy from GitHub Actions (0.1.36+)
+railcode token <create|list|revoke> ...       App-scoped deploy tokens for CI (edit tier) (0.1.36+)
 railcode --version
 railcode --help
 ```
@@ -66,6 +69,14 @@ config > `https://api.railcode.app`. Set
 `RAILCODE_API_TOKEN` to override the saved token in CI. On a `401`, the saved token is
 cleared and you're told to `railcode login` again.
 
+A CI runner has **no `~/.railcode/config.json` at all**, so the token alone is not
+enough there — the org uuid has nowhere to come from either. Set all three:
+`RAILCODE_API_TOKEN`, `RAILCODE_API_URL` and `RAILCODE_ORG_UUID`. Without the last
+one the command stops at *"No organization on file"* despite a perfectly valid
+token. Only the token is a secret; the other two are identifiers. **`RAILCODE_ORG_UUID`
+needs CLI 0.1.36+** — an older binary ignores it and fails in exactly that way. See
+[Deploy From CI](#deploy-from-ci-github-actions).
+
 ## Log In
 
 ```bash
@@ -89,8 +100,9 @@ callback or a pasted code — whichever happens first. `--paste` (or `--no-brows
 the localhost server entirely, for SSH/headless machines.
 
 Browser login needs a TTY. In non-interactive environments set `RAILCODE_API_TOKEN`
-instead. If you have no organization yet, finish onboarding in the dashboard, then run
-`railcode login` again so the org is saved (deploy needs it).
+instead — plus `RAILCODE_ORG_UUID` when there is no saved config to read the org from,
+as on a CI runner. If you have no organization yet, finish onboarding in the dashboard,
+then run `railcode login` again so the org is saved (deploy needs it).
 
 `railcode login --setup-token <rc_setup_...>` is the no-TTY, no-browser onboarding path: a
 **one-time, ~10-minute** setup token (minted by the dashboard's copied CLI prompt) is
@@ -419,7 +431,12 @@ Deploy behavior:
 - Sends the folder's recorded base version so the deploy is **conditional** — see
   [The Version Marker](#the-version-marker-railcode). `--force` deploys over a version
   someone else has moved past.
-- Prints the live URL `http://<app>.<org>.<serving-domain>/` after upload.
+- Prints the live URL after upload. From CLI 0.1.36 this comes from the deploy
+  **response** rather than being assembled locally, so it is right even on a CI runner
+  that has no saved config to derive an org slug from. The shape is the instance's:
+  `<app>.<org>.<serving-domain>` on cloud, `<app>.<serving-domain>` self-hosted. Against
+  a server too old to return it the CLI falls back to deriving it, and prints no URL at
+  all rather than a wrong one.
 
 Deploy output resolution order:
 
@@ -432,6 +449,70 @@ Deploy output resolution order:
    `"dist": "."`.
 
 The `railcode.json` schema is `{ app, build?, dist?, dev?: { root?, command?, port? } }`.
+
+## Deploy From CI (GitHub Actions)
+
+New in CLI **0.1.36**. Don't hand a pipeline your personal token — it carries every
+power you hold, on every route, and never expires. Use a **deploy token**: an
+app-scoped credential that can `POST` that one app's deploy route and nothing else on
+the API. It cannot read data, list apps, revert a deploy, or mint another token. It is
+a capability, not a login.
+
+```bash
+railcode ci github [--app <slug>] [--repo <owner/name>] [--branch <name>]
+                   [--no-secret] [--force]
+```
+
+Run it inside the project. It resolves the app from `railcode.json` (or `--app`) and
+the repository from the `origin` remote, mints a deploy token, hands the plaintext to
+GitHub as the repository secret `RAILCODE_API_TOKEN` **via the `gh` CLI over stdin** —
+so it never reaches your screen, your shell history, or an argv another process can
+read — and writes `.github/workflows/railcode-deploy.yml`. With `--no-secret`, without
+`gh`, or when it can't tell which repo this is, it prints the token once plus the exact
+`gh secret set` command instead. `--force` overwrites an existing workflow file.
+**Nothing is added to `railcode.json`** — a file inside the repo can't prove where it
+runs, so trust stays server-side.
+
+Manage the tokens directly with:
+
+```bash
+railcode token create [--app <slug>] [--name <label>] [--expires-in-days <n>] [--json]
+railcode token list   [--app <slug>] [--json]
+railcode token revoke [--app <slug>] <token-prefix>
+```
+
+The plaintext is shown **once**, at mint time. Creating one is **EDIT**-tier — it hands
+out exactly the power the minter already has — and every owner/editor/admin of the app
+can see and revoke every token on it, whoever minted it. A deploy token dies with its
+creator's edit rights on the app, and deleting the app revokes its tokens. Long-lived by
+default: an expiring CI credential breaks a pipeline with no warning, so `--expires-in-days`
+is opt-in. Deploy tokens never appear in the personal-token list — they belong to the
+app, and the dashboard manages them on the app's **CI** tab.
+
+The generated workflow carries all three values the runner needs, because a runner has
+no `~/.railcode/config.json`:
+
+```yaml
+      - run: npx --yes railcode@latest deploy
+        env:
+          RAILCODE_API_URL: https://api.railcode.app
+          RAILCODE_ORG_UUID: <org uuid>          # an identifier, not a secret
+          RAILCODE_API_TOKEN: ${{ secrets.RAILCODE_API_TOKEN }}
+```
+
+**The runner must resolve a CLI new enough to read `RAILCODE_ORG_UUID` (0.1.36+).**
+`npx railcode@latest` does that once 0.1.36 is on npm; a pinned older version fails with
+*"No organization on file. Finish onboarding, then run `railcode login` again."* even
+though the token is valid — the binary simply doesn't know the variable exists.
+
+What a stolen deploy token can do: replace the served code of that one app — complete
+control of what its visitors see, and full use of the authority the app already holds.
+It **cannot raise** that authority: a deployed `manifest.yaml` lands as `pending` and a
+person still has to ratify it.
+
+`railcode deploy --private` does not work from CI: setting access is a separate call the
+deploy token is refused on (`403`), so the deploy lands and the command then exits `1`.
+Set access from the dashboard or an authenticated session instead.
 
 ## The Version Marker (`.railcode`)
 

@@ -21,6 +21,9 @@ service.
   `deploy.apiUrl` manifest key.
 - **Auth** — the saved personal API token, or `RAILCODE_API_TOKEN` for non-interactive
   deploys. On a `401` the token is cleared and you're asked to `railcode login` again.
+  With no saved config at all (a CI runner), also set `RAILCODE_ORG_UUID` — and prefer an
+  app-scoped **deploy token** over a personal one. See
+  [Deploy From CI](cli-workflow.md#deploy-from-ci-github-actions).
 - **Where it lands** — the app is created-or-resolved by slug in your saved org. The first
   **successful** deploy is what creates the app; a failed first deploy leaves no phantom app.
 - **Private on deploy** — `railcode deploy --private` is a one-shot action that sets this
