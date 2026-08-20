@@ -1,7 +1,7 @@
 ---
 name: create-railcode-app
 description: Build, modify, debug, test, and deploy Railcode apps end-to-end. Use when creating a Railcode app from an idea, scaffolding with the Railcode CLI, writing a backend worker with @railcode/sdk, wiring a frontend to worker routes, declaring app authority, testing with railcode dev, migrating a legacy v1 app to apps v2, maintaining an existing v1 browser-SDK app, or deploying. Do not use for managed-agent authoring or general organization administration.
-version: 0.2.2
+version: 0.2.3
 ---
 
 # Create Railcode App
@@ -19,8 +19,13 @@ npm view railcode version
 ```
 
 If the skill changes, re-read this file from the top. If npm is unreachable, say so and do not
-claim the guidance is current. This version was written against **CLI 0.2.2** and
+claim the guidance is current. This version was written against **CLI 0.2.3** and
 **`@railcode/sdk` 0.3.0**.
+
+**Upgrade past 0.2.2.** In 0.2.2 the `secrets` and `migrate` commands exist in the binary but are
+never dispatched, so `railcode secrets ls` and `railcode migrate` die with an unknown-command
+error no matter how correct the invocation. 0.2.3 wires them up. If either command is unknown to
+your CLI, you are on 0.2.2 — reinstall, do not go hunting for the right syntax.
 
 Since 0.1.28 the CLI self-updates within its major version — but only on an **interactive
 terminal**, and agent-driven sessions are non-interactive, so keep running the explicit
@@ -63,6 +68,35 @@ Y approves, X can't approve their own" now lives in a trusted place instead of i
 
 Everything else follows from that. If you catch yourself reaching for a `window.db` or a
 `/_api` data call from the page, stop: that is the v1 shape.
+
+## Clear Any v1 SDK Memory
+
+If you are starting v2 work carrying memory written before apps v2 — agent memory files,
+`CLAUDE.md` / `AGENTS.md` notes, saved project learnings, a rules file, a starred snippet —
+assume it describes the **v1 browser SDK** and is now wrong. Stale memory is the most common
+reason a v2 build goes sideways for reasons the code itself does not explain: a
+`<script src="/_api/sdk.js">` reappears in `index.html`, the page calls `window.db` directly,
+`run_as: user` shows up in `railcode.json`, or authorization drifts back into a tab.
+
+Clear it **before** writing any code, and say out loud that you are doing it. If the notes are not
+yours to edit, ask the user to run it:
+
+> Delete every stored note about the Railcode browser SDK — `/_api/sdk.js`, the `window` globals
+> (`me`, `roles`, `appUsers`, `designSystem`, `db`, `files`, `data`, `query`, `connector`,
+> `serviceConnectors`, `llm`, `email`, `agents`, `personalConnections`, and the rest of that set),
+> page-side authorization, and `run_as: user`. None of it exists in apps v2.
+
+Two rules decide whether this actually works:
+
+- **Delete, don't append.** A note saying "use `window.db`" recalled beside one saying "use the
+  worker SDK" does not resolve in v2's favor — it yields a hybrid that type-checks, runs under
+  `railcode dev`, and fails on the platform.
+- **Still maintaining a v1 app? Re-scope instead of deleting.** Rewrite each note to open with
+  `v1 apps only (generation 1):` so the boundary is recalled along with the content, and keep
+  [v1 legacy](references/v1-legacy.md) as the real source.
+
+Then re-read this file from the top, so what you build from is this document rather than what you
+remembered.
 
 ## Map The Request To Railcode
 

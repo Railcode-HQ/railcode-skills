@@ -47,6 +47,14 @@ Keep that window as short as you can: have the v2 build finished, built, and val
 
 If you are on Path A you never enter this window at all — which is the argument for Path A.
 
+`railcode migrate` requires **CLI 0.2.3**; on 0.2.2 the command exists but is never dispatched and
+fails as unknown.
+
+Whichever path you take, clear any stored notes about the v1 browser SDK once the app is v2 — see
+[Clear Any v1 SDK Memory](../SKILL.md#clear-any-v1-sdk-memory). Notes that were accurate yesterday
+describe a data plane that no longer answers, and they are what pull a half-migrated page back
+toward `window.db`.
+
 ## What happens to the data
 
 This surprises people in a good way.

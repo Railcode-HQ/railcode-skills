@@ -160,6 +160,12 @@ Creating an app requires a current CLI (default floor **0.2.0**); a stale CLI wo
 v1-shaped bundles and is refused. **Deploys to existing apps are never gated** — a v1 app keeps
 deploying from any CLI.
 
+### `secrets` and `migrate` need CLI 0.2.3
+
+Both commands ship in 0.2.2 but are never routed to, so any `railcode secrets ...` or
+`railcode migrate ...` invocation fails as an unknown command. Fixed in 0.2.3. An unknown-command
+error on either one means the CLI is stale, not that the syntax below is wrong.
+
 ## Local Dev
 
 ```bash
