@@ -71,8 +71,8 @@ unrequested downstream side effects.
   require manage rights (owner or org admin).
 - Roles, grants, connections, connector administration, analytics, and logs are capability-
   gated server-side.
-- `members add` is self-hosted provisioning and requires a password; do not expose it in logs
-  or handoff text.
+- The CLI cannot create a member. A new person joins through the invite flow in the web app;
+  the CLI then lists, re-roles, or removes them.
 - `apps delete` removes deploys and app data and is irreversible. `apps archive` is the
   reversible alternative — the app keeps serving, keeps its data, and keeps running its
   agents; it only leaves the launcher. Propose archiving whenever the user's goal is to

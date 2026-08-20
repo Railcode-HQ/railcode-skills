@@ -133,7 +133,7 @@ bundler, no `wrangler`, no Cloudflare package, and no worker build script:
 | **`hono+vite`** (default) | Vite + React | Hono | `frontend/` + `server/index.ts` |
 | `hono+static` | one `index.html`, no build | Hono | `frontend/index.html` + `server/index.ts` |
 | `tanstack` | TanStack Start (SPA mode) | server fns + `/api/*` | file routes; data routes need `ssr: false` |
-| `static` | static tree | **none** | pure hosting; works self-hosted |
+| `static` | static tree | **none** | pure hosting; no server code |
 
 Each worker template scaffolds a small **platform tour** — identity (`ctx.user` + `appUsers`), a
 todo list on `db`, files, and the read-only org surfaces — over a frontend that only fetches the
@@ -492,10 +492,9 @@ Deploy behavior:
   someone else has moved past.
 - Prints the live URL after upload. From CLI 0.1.36 this comes from the deploy
   **response** rather than being assembled locally, so it is right even on a CI runner
-  that has no saved config to derive an org slug from. The shape is the instance's:
-  `<app>.<org>.<serving-domain>` on cloud, `<app>.<serving-domain>` self-hosted. Against
-  a server too old to return it the CLI falls back to deriving it, and prints no URL at
-  all rather than a wrong one.
+  that has no saved config to derive an org slug from. The shape is
+  `<app>.<org>.<serving-domain>`. Against a server too old to return it the CLI falls
+  back to deriving it, and prints no URL at all rather than a wrong one.
 
 Deploy output resolution order:
 

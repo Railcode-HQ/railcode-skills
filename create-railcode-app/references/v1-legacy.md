@@ -51,15 +51,11 @@ in-page LLM.
 ## Request Routing
 
 Railcode is multi-tenant: every app belongs to an **organization**, and apps are static apps
-served from per-org subdomains. With the default two-label host strategy:
+served from per-org subdomains. The host is two labels deep:
 
 ```text
 https://<app_slug>.<org_slug>.<BASE_DOMAIN>/      e.g. https://notes.acme.railcode.app/
 ```
-
-(Self-hosted instances are single-tenant and so we drop the org label:
-`https://<app_slug>.<BASE_DOMAIN>/`. The CLI records which strategy your instance uses and
-prints the right live URL.)
 
 The same host also exposes the platform data plane at **`/_api/*`**. Because the browser
 calls same-origin URLs, app code needs no CORS config, no API URLs, and no credentials. The
@@ -572,8 +568,8 @@ const res = await email.send({
   Ungranted calls return `403`.
 - **Governed, not free.** Each org has a daily recipient cap (attempts count against it,
   even failed sends) → `429` when exhausted; suppressed (bounced/complained) recipients are
-  rejected. Self-hosted or an unconfigured provider returns `503 email_unavailable`. Render
-  all of these as normal app states — never retry loops.
+  rejected. An unconfigured provider returns `503 email_unavailable`. Render all of these as
+  normal app states — never retry loops.
 - Use the SDK's email discovery surface when the UI must show availability or remaining quota;
   send through `email.send`.
 

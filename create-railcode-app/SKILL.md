@@ -307,7 +307,6 @@ quietly build an approximation that can't work.
 
 | Not possible | Why, and the nearest supported path |
 |---|---|
-| Self-hosted worker features | Apps v2 workers are **cloud only**; a self-hosted deploy refuses them with `501`. A `static` app still works self-hosted |
 | Public or customer-facing apps | Every viewer must be a signed-in org member — no anonymous access, no self-signup. These are internal tools |
 | Inbound webhooks / public API endpoints | Your worker only runs on an authenticated app request or your own cron. Poll the source on a cron instead of receiving events |
 | Arbitrary outbound calls | Egress is an allow-list. Declare hosts under `egress:` (exact names or one wildcard level; no schemes, ports, or paths); the default is the data plane only |
@@ -334,7 +333,6 @@ quietly build an approximation that can't work.
 | `db` is one flat store | No joins, transactions, or aggregations. Partitioning is your key design. Keep heavy data in a warehouse and read it via saved queries |
 | KV `list()` is first-page-only | Default 100, max 500 — **paginate in the worker or you silently drop the tail** |
 | No embeddings or vector search | The LLM gateway is text-in/text-out |
-| Presigned file URLs need S3-backed storage | On local-storage deployments `files.url()`/`files.urls()` answer `501`; stream bytes through your own route with `files.get()` instead |
 
 **Agents and cron**
 

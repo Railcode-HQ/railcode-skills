@@ -43,7 +43,7 @@ railcode.json      # { app, type: "hono+static", dist: "dist/client", server: "d
 **`tanstack`** — TanStack Start in SPA mode; server functions (`/_serverFn/*`) and routes
 (`/api/*`) run in the worker. Data routes must be `ssr: false`.
 
-**`static`** — pure hosting. No worker, no worker manifest keys, and it still works self-hosted.
+**`static`** — pure hosting. No worker and no worker manifest keys.
 
 **Bring your own** — any bundler that emits a static `dist` plus **one self-contained ESM module**
 with `export default { fetch }`. Point `"dist"` and `"server"` at them. The one rule: the module
@@ -259,8 +259,6 @@ const { items, missing } = await files.urls(names);
 ```
 
 `missing` is data, not an error — render those names as unavailable rather than failing the page.
-Both calls need S3-backed storage; where storage is local they answer `501`, so stream bytes
-through a route of your own with `files.get()` instead.
 
 ## LLM
 

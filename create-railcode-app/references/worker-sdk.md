@@ -127,9 +127,6 @@ const batch = await files.urls(["a.png", "b.png", "c.png"]);    // { items, miss
 one storage client. Names with no stored file come back under `missing` rather than throwing — a
 partial answer is the normal case. Cap: 100 names per call (`422` above it).
 
-**Both need S3-backed storage.** On a local-storage deployment they answer `501`; stream the
-bytes through a route of your own with `files.get()` instead.
-
 ## SQL and saved queries
 
 Prefer **saved queries** — an admin publishes them, so the app never embeds SQL:
@@ -375,7 +372,7 @@ try {
 ```
 
 Statuses worth handling by name: `403` undeclared authority, `409` not-connected or
-cron-incompatible, `429` a daily cap (typed quota), `501` a capability this deployment lacks.
+cron-incompatible, `429` a daily cap (typed quota).
 
 ## Authority: the manifest
 

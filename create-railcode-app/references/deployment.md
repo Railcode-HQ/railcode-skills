@@ -23,9 +23,6 @@ the deploy row, so a revert reproduces the *original* executable rather than reb
 cold revert — re-applies the *current* secret set before the flip is observable, so a revert can
 never resurrect a rotated value. Manage them with `railcode secrets`.
 
-A `static` app (no `server` key) deploys exactly as before and still works on a self-hosted
-instance. **Worker features are cloud-only** — a self-hosted deploy refuses them with `501`.
-
 - **Which server** — resolved from `--api-url`, then `RAILCODE_API_URL`, then the saved CLI
   config from `railcode login`, then `https://api.railcode.app`. There is no
   `deploy.apiUrl` manifest key.
