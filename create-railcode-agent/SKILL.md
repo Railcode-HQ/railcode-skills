@@ -1,7 +1,7 @@
 ---
 name: create-railcode-agent
 description: Build, test, publish, invoke, schedule, and update Railcode managed agents with the Railcode CLI. Use when creating an organization or personal managed agent, editing an agent manifest (JSON or YAML), running a draft or saved agent, investigating a run, managing its cron schedule, running it from Slack (@Railcode $agent), pairing it with a companion app, processing files in its sandbox, or using personal connectors (Gmail, Slack, ...) on behalf of one owner. Do not use for static Railcode apps, in-app LLM tool loops (llm.generate({ tools }) — see create-railcode-app), or general organization administration.
-version: 0.1.22
+version: 0.1.23
 ---
 
 # Create Railcode Agent
@@ -48,7 +48,7 @@ file artifacts as a substitute. Publish durable results back through `tools.app_
 | "Use my Gmail, Slack, or another account I personally connected" | `tools.personal_connectors` on a **personal** agent; calls run as the agent owner |
 | "Connect my account to a product Railcode does not bundle" | A custom MCP personal connector works for an **app, not an agent**; offer a companion app, service connector, or data import path |
 | "Read records people manage in a Railcode app" | `tools.app_data`, usually with a companion app |
-| "Read, extract, summarize, transform, or generate a file with AI" | **Managed agent** with `tools.app_files` + sandbox; never the companion app's in-page LLM |
+| "Read, extract, summarize, transform, or generate a file with AI" | **Managed agent** with `tools.app_files` + sandbox; never the companion app's `llm` |
 | "Edit this Word document / DOCX and preserve it as a file" | **Managed agent + companion app**: the app stores/manages source and output files; declare `tools.app_files` to load the DOCX and `tools.app_data_write` to publish the edited document |
 | "Create or revise a PowerPoint / PPTX deck" | **Managed agent + companion app**: the app manages templates, inputs, and generated decks; use the sandbox to create/edit the PPTX and `publish_artifact_to_app` to return it |
 | "Create a PDF report, form, or document" | **Managed agent + companion app**: the app manages inputs and downloadable outputs; generate and verify the PDF in the sandbox, then publish it through `tools.app_data_write` |
@@ -58,7 +58,7 @@ file artifacts as a substitute. Publish durable results back through `tools.app_
 | "Parse files, produce documents, or run code" | Managed-agent sandbox plus `tools.app_files`; publish durable outputs back to an app with `tools.app_data_write` |
 | "Email a report from the system" | `tools.email`; use a Gmail **personal connector** when it must send from the owner's own mailbox |
 | "Run every morning, from Slack, or after a browser closes" | Managed agent plus a cron schedule or the built-in Slack invocation path |
-| "Give people a UI to upload inputs, trigger runs, or review results" | A companion Railcode app using `agents.invoke()` / `agents.start()` |
+| "Give people a UI to upload inputs, trigger runs, or review results" | A companion Railcode app whose **worker** calls `agents.start()` (see [Companion Apps](#companion-apps)) |
 | "Call an arbitrary website/API" | First look for service or bundled personal connectors; otherwise offer connector setup/import—a managed agent cannot fetch the open web or declare custom MCP toolkits |
 
 ## Sandbox Capabilities
@@ -77,17 +77,18 @@ sandbox disappears when the run ends.
 ## When To Use A Managed Agent vs The In-Page LLM
 
 A **managed agent** (this skill) runs server-side under its own ratified manifest, with a
-code sandbox and durable, auditable runs. The **in-page LLM** (`llm.generate`/`llm.stream`
-with `tools`, via `$create-railcode-app`) runs in the app viewer's tab with the app's SDK
-authority and dies with the tab. Pick the first matching row:
+code sandbox and durable, auditable runs. The **app's own LLM** (`llm.generate`/`llm.stream`
+via `$create-railcode-app`) runs inside the app's worker and is bounded by that one
+invocation — it cannot outlive the request, run code, or touch a file. Pick the first matching
+row:
 
 | The AI feature… | Use |
 |---|---|
-| Summarizes / classifies / analyzes data the app already reads — user watching, done in seconds | **In-page LLM** |
-| Reads, understands, extracts, summarizes, transforms, or generates any file | **Managed agent** (`app_files` + sandbox); never the in-page LLM |
+| Summarizes / classifies / analyzes data the app already reads — user watching, done in seconds | **The app's worker `llm`** |
+| Reads, understands, extracts, summarizes, transforms, or generates any file | **Managed agent** (`app_files` + sandbox); never the app's `llm` |
 | Writes and runs code | **Managed agent** (sandbox) |
 | Is triggered outside the app (Slack, cron, API) | **Managed agent** |
-| Runs unattended, must survive tab close, or needs retries | **Managed agent** |
+| Must survive the request, run unattended, or needs retries | **Managed agent** |
 | Has effects that must not depend on who's viewing (shared writes, send as the system) | **Managed agent** |
 | Needs a run history someone will audit or debug | **Managed agent** |
 
@@ -409,24 +410,43 @@ final answer that reads well as a Slack message.
 
 ## Companion Apps
 
-An agent often needs a **companion app** — a small static app (`$create-railcode-app`)
-deployed alongside it. Reach for this pattern whenever the agent relies on files or
-records someone must manage, or people need a place to trigger it and see its output:
+An agent often needs a **companion app** — a small app (`$create-railcode-app`) deployed
+alongside it. Every app built today is **apps v2**: a static frontend plus a backend worker, so
+the companion app calls the agent **from its worker** with `@railcode/sdk`, not from the page.
+Reach for this pattern whenever the agent relies on files or records someone must manage, or
+people need a place to trigger it and see its output:
 
 - **Storage the agent relies on** — the app is the UI for uploading and managing the files
   and records the agent reads: `files.upload()`/`db` in the app; `app_files: [<app-slug>]`
   / `app_data: [<app-slug>]` in the agent's manifest.
 - **A surface for results** — the agent writes back via `app_data_write`
   (`app_kv_set`, `publish_artifact_to_app`) and the app renders run outputs.
-- **An easy way to test and trigger** — a button wired to `agents.invoke(name, input)`
+- **An easy way to test and trigger** — a worker route wired to `agents.start(name, input)`
   (app manifest: `agents: [<agent-name>]`) exercises the agent end-to-end far faster than
   hand-crafting CLI runs, and doubles as the interactive production trigger.
+
+Four things to know about driving an agent from a v2 companion app:
+
+- `agents.start()` returns the **queued** run immediately. Hand `request_id` to the frontend and
+  let it poll a route that calls `agents.get()`. `agents.invoke()` polls for you but throws
+  `AgentRunPending` at its deadline — the run survives; the wait doesn't.
+- The app must **declare the agent** (`agents: [<name>]`). A missing declaration is a refusal
+  (`403`), not pass-through — even for a caller who could invoke it from the dashboard.
+- **A run is owned by `(app, caller)`.** The app can only read runs it started, for the caller who
+  started them; a dashboard-started run is invisible to it.
+- **An app cron cannot start a run** (`409` — no caller means no run owner). For scheduled work,
+  give the agent **its own schedule**.
+
+**Prefer an ORG agent for a v2 companion app.** An org agent's `app_data_write` lands in the
+app's *shared* scope, which **is** a v2 app's flat `db` store — so results appear in a collection
+the worker already reads, with no bridge. A **personal** agent writes into its owner's *user*
+scope, which on a migrated app is frozen and read-only from the worker.
 
 Name the app after the agent (e.g. agent `report-extractor`, app
 `report-extractor-console`), declare the narrowest slugs on both sides, and build the app
 with `$create-railcode-app`. The `agents/` rows in [Start From An Example](#start-from-an-example)
-are working versions of exactly this pairing — read or copy one instead of assembling it
-from scratch.
+are working versions of exactly this pairing — but note they are **generation-1** apps, so read
+them for the agent side and build the app half as apps v2.
 
 ## Hard Limits
 

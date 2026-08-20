@@ -1,0 +1,384 @@
+# Worker SDK (`@railcode/sdk`)
+
+The backend SDK for apps v2 workers. Typed, dependency-free ESM, **no secrets and no addresses
+inside it** — power is injected per invocation by the platform.
+
+It runs in exactly two places: a **deployed Railcode worker**, and **`railcode dev`**. Anywhere
+else (a browser bundle, a plain `node` script, a test harness) the first call throws an
+instructive error. There is no browser build.
+
+```ts
+import { ctx, db, files, llm, agents, query, connector, email, secrets } from "@railcode/sdk";
+```
+
+## Contents
+
+- [`ctx` — the verified caller](#ctx--the-verified-caller)
+- [`db` — the flat store](#db--the-flat-store)
+- [`files`](#files)
+- [SQL and saved queries](#sql-and-saved-queries)
+- [`llm`](#llm)
+- [Managed agents](#managed-agents)
+- [Service connectors](#service-connectors)
+- [Personal connectors](#personal-connectors)
+- [`appUsers` and `dataConnectors`](#appusers-and-dataconnectors)
+- [`email`](#email)
+- [`secrets`](#secrets)
+- [Errors](#errors)
+- [Authority: the manifest](#authority-the-manifest)
+
+## `ctx` — the verified caller
+
+```ts
+ctx.user          // { id, email, name, is_admin, roles: [{uuid, name}] } | null
+ctx.trigger       // "http" | "cron"
+ctx.invocationId  // this invocation's id — your idempotency key
+ctx.waitUntil(p)  // extend past the response (deployed workers only)
+```
+
+`ctx.user` is **unforgeable**. It was verified at the platform gate and embedded in the
+invocation token; app code cannot fake its caller. It is `null` **only** on cron triggers.
+
+This is the foundation of every authorization decision you write. Never take identity or
+ownership from the request body.
+
+```ts
+const user = ctx.user;
+if (!user) return c.json({ error: "cron cannot do this" }, 409);
+if (!user.is_admin) return c.json({ error: "forbidden" }, 403);
+```
+
+`ctx.user.roles` carries the **caller's own** roles. There is no way to list the org's full role
+set from a worker.
+
+## `db` — the flat store
+
+**One flat key/value store per app.** No scopes, no namespaces, no per-user partition built in.
+Data written by earlier deploys — including a v1 app's unscoped data before migration — is simply
+there.
+
+```ts
+const notes = db.collection("notes");
+await notes.put("key", { title: "hi" });
+await notes.get("key");                    // null when absent
+await notes.delete("key");
+await notes.query().where("status", "=", "open").order("created_at", "desc").page(1, 100);
+```
+
+**You own partitioning and access control.** "Per-user" is a key convention plus a check you
+write:
+
+```ts
+const key = `${ctx.user!.id}:${recordId}`;          // partition
+const row = await notes.get(key);
+if (!row) return c.json({ error: "not found" }, 404);  // and the check
+```
+
+Do not simulate the old `db.user` / `db.role()` scopes and assume the platform enforces them. It
+does not. A prefix is a convention; the check is what makes it real.
+
+### `list()` is first-page-only
+
+The single sharpest edge in the SDK. `query()` returns **one page** — default 100, max 500. A
+large collection silently loses its tail unless you paginate:
+
+```ts
+const out = [];
+for (let page = 1; ; page++) {
+  const rows = await db.collection(name).query().page(page, 500);
+  out.push(...rows);
+  if (rows.length < 500) break;
+}
+```
+
+### Frozen v1 scopes (migrated apps only)
+
+After `railcode migrate`, the app's old user/role-scoped browser data is **frozen**: readable for
+live migration, writable by nothing.
+
+```ts
+await db.scoped(userId).collection("drafts").query();      // read-only
+await db.scopedRole(roleUuid).collection("shared").get(k); // read-only
+```
+
+There is no write path. Copy what you need into the flat store under your own keys.
+
+## `files`
+
+Server-plane: **your worker holds the bytes**, so uploads are one direct call and downloads are a
+streamed `Response`. No presign negotiation.
+
+```ts
+await files.put("report.pdf", bytes, "application/pdf");  // string | ArrayBuffer | Blob | stream
+const resp = await files.get("report.pdf");               // Response | null
+await files.list();
+await files.delete("report.pdf");
+```
+
+### Handing a file to your frontend
+
+```ts
+const one   = await files.url("report.pdf");                    // { name, url, expires_in }
+const batch = await files.urls(["a.png", "b.png", "c.png"]);    // { items, missing }
+```
+
+**Use `urls()` for more than one file.** A worker invocation has a finite subrequest budget
+(~100), and a loop of `url()` is exactly what exhausts it. `urls()` presigns the whole batch with
+one storage client. Names with no stored file come back under `missing` rather than throwing — a
+partial answer is the normal case. Cap: 100 names per call (`422` above it).
+
+**Both need S3-backed storage.** On a local-storage deployment they answer `501`; stream the
+bytes through a route of your own with `files.get()` instead.
+
+## SQL and saved queries
+
+Prefer **saved queries** — an admin publishes them, so the app never embeds SQL:
+
+```ts
+await savedQueries();                       // [{ name, description, params }]
+await query("revenue_by_month", { year: 2026 });
+```
+
+Direct SQL only when the user explicitly asks. Always bind parameters:
+
+```ts
+await data("warehouse").runSQL("select * from orders where id = $1", [id]);
+await postgres("warehouse").runSQL(...);    // dialect-pinned variants
+await bigquery("analytics").runSQL(...);
+await turso("edge").runSQL(...);
+```
+
+Both require the manifest: `saved_queries:` for the first, `adhoc_sql:` for the second.
+
+## `llm`
+
+```ts
+const r = await llm.generate({ messages: [{ role: "user", content: "..." }] });
+const stream = await llm.stream({ messages });        // for await (const ev of stream)
+await llmProviders();                                 // what the org has configured
+```
+
+Text in, text out. **No embeddings, no vector search, no multimodal input.**
+
+### Tool loops
+
+`llm.generate({ tools })` with run-bearing tools drives the loop for you. `llm.stream({ tools })`
+**throws** — streaming does not run tool loops. Drive tool loops through `generate`.
+
+Manifest: `llm: true`. Per-app daily token cap; exceeding it returns a typed `429`.
+
+## Managed agents
+
+A worker can start a managed-agent run and read its outcome. This is how a v2 app reaches file
+AI, code execution, and anything that must outlive the request.
+
+```ts
+const run = await agents.start("digest", { url });   // returns QUEUED immediately
+run.request_id                                        // the poll handle
+const later = await agents.get(run.request_id);
+```
+
+**Runs are never awaited in-band.** A worker invocation is one request with a finite subrequest
+budget and a token that expires; an agent run is minutes of work. The normal shape is:
+
+1. `agents.start()` in a worker route.
+2. Return `request_id` to your frontend (or persist it in `db`).
+3. The frontend polls a route of yours that calls `agents.get()`.
+
+For genuinely short runs there is a convenience:
+
+```ts
+const done = await agents.invoke("digest", input, { timeoutMs: 30_000 });
+```
+
+It polls to a terminal status and **throws `AgentRunPending`** at its deadline (60s default)
+rather than draining the subrequest budget. The run is **not** cancelled — `err.requestId` still
+reads it:
+
+```ts
+try {
+  const done = await agents.invoke("digest", input);
+} catch (err) {
+  if (err instanceof AgentRunPending) {
+    await db.collection("jobs").put(jobId, { requestId: err.requestId });
+    return c.json({ status: "running", requestId: err.requestId }, 202);
+  }
+  throw err;
+}
+```
+
+### Rules that bite
+
+- **Declare the agent.** `agents: [name, ...]` in `manifest.yaml`, ratified. Like personal
+  connectors, **a missing declaration is a refusal, not pass-through** — an undeclared agent is
+  `403 agent "x" was not in the manifest`, even one the caller could invoke from the dashboard
+  themselves. An agent that doesn't exist is `404`.
+- **Cron cannot start a run.** No caller means no run owner: `409`. Give the agent **its own
+  schedule** instead of driving it from an app cron.
+- **A run is owned by `(app, caller)`.** `agents.get()` reads only runs *this app* started for
+  *this caller*. A run started from the dashboard is `404` to the worker, and vice versa.
+- **Prefer org agents.** An **org** agent's `app_data_write` lands in the app's shared scope,
+  which **is** your flat store — so the agent's results appear in `db` with no bridge. A
+  **personal** agent writes into its owner's user scope, which on a migrated app is the frozen,
+  read-only area.
+
+### The durable pattern
+
+```ts
+// 1. queue
+app.post("/api/extract", async (c) => {
+  const run = await agents.start("extractor", { file: name });
+  await db.collection("jobs").put(run.request_id, {
+    owner: ctx.user!.id, status: "running", file: name,
+  });
+  return c.json({ requestId: run.request_id }, 202);
+});
+
+// 2. poll — and check ownership, because db does not
+app.get("/api/extract/:id", async (c) => {
+  const job = await db.collection("jobs").get(c.req.param("id"));
+  if (!job || job.owner !== ctx.user!.id) return c.json({ error: "not found" }, 404);
+  const run = await agents.get(c.req.param("id"));
+  return c.json({ status: run.status, output: run.output_json });
+});
+```
+
+## Service connectors
+
+The org's shared third-party accounts. An admin owns the credential; the backend pins the host
+and injects it — your worker never sees it.
+
+```ts
+await serviceConnectors();                       // what's enabled
+await serviceConnectorDocs("stripe");            // how to call it
+const r = await connector("stripe").fetch("/v1/charges", { method: "GET" });
+await r.json();
+```
+
+Manifest: `connectors: { stripe: ["GET /v1/charges"] }` — bound **per endpoint**, not per
+connector.
+
+## Personal connectors
+
+The **caller's own** connected account (Gmail, Slack, a custom MCP server).
+
+```ts
+await personalConnections.list();                       // toolkits + connection status
+await personalConnections.tools("gmail");
+await personalConnections.call({ toolkit: "gmail", tool: "send_email", arguments: {...} });
+const { redirect_url } = await personalConnections.connect("gmail");
+```
+
+**Connect is a browser redirect driven from the worker.** Return `redirect_url` to your frontend,
+open it in a popup, and poll `list()` until the toolkit reports `active`. The OAuth callback lands
+on the platform API, so your app needs no callback route.
+
+Manifest: `personal_connectors: [gmail, "slack:send_message"]`. **A missing declaration is a
+refusal, not pass-through** — nothing else stands between an app and a user's own account, so the
+declaration is the only bound. An app declaring `gmail:send_email` can send as you and cannot read
+your inbox. Undeclared → `403`; not yet connected → `409` (surface it as a "Connect your account"
+prompt).
+
+**Does not compose with cron** (`409`): every call acts as `ctx.user`, and cron has none.
+
+## `appUsers` and `dataConnectors`
+
+Read-only org discovery, for building pickers and showing names:
+
+```ts
+await appUsers();          // [{ id, email, name, is_admin }] — id matches ctx.user.id
+await dataConnectors();    // [{ name, engine }] — never a DSN
+```
+
+Both require the ratified `run_as: app` manifest.
+
+## `email`
+
+```ts
+await email.send({ to, subject, html });
+```
+
+Send-only, platform-pinned sender, appended disclaimer. **You cannot receive email or send from a
+custom address.** When mail must come from the user's own account, use a Gmail personal connector
+instead. Manifest: `email: true`. Per-app daily cap → typed `429`.
+
+## `secrets`
+
+```ts
+secrets.STRIPE_KEY        // ambient, per-app
+```
+
+Set them with the CLI, never in code:
+
+```bash
+railcode secrets set STRIPE_KEY      # hidden prompt or piped stdin
+railcode secrets import .env
+railcode secrets ls                  # names + set-at + digest, never values
+railcode secrets rm STRIPE_KEY
+```
+
+Write-only and **live app state, not part of a deploy** — every deploy, revert, and cold revert
+re-applies the current set, so a revert can never resurrect a rotated value. Caps: 64 per app,
+5 KB per value.
+
+## Errors
+
+```ts
+import { ApiError, AgentRunPending, LlmRunError } from "@railcode/sdk";
+```
+
+`ApiError` carries `.status` and the body. **Relay it verbatim** from your worker routes — the
+frontend's 403/409/429 handling depends on the status surviving the extra hop:
+
+```ts
+try {
+  return c.json(await db.collection("notes").get(key));
+} catch (err) {
+  if (err instanceof ApiError) return c.json(JSON.parse(err.message), err.status);
+  throw err;
+}
+```
+
+Statuses worth handling by name: `403` undeclared authority, `409` not-connected or
+cron-incompatible, `429` a daily cap (typed quota), `501` a capability this deployment lacks.
+
+## Authority: the manifest
+
+`manifest.yaml` sits beside `railcode.json`. **On v2 `run_as: app` is mandatory** — the worker is
+the principal, and there is no caller whose personal grants could stand in.
+
+```yaml
+run_as: app
+llm: true
+email: true
+saved_queries:
+  - revenue_by_month
+adhoc_sql:
+  - warehouse
+connectors:
+  stripe:
+    - GET /v1/charges
+agents:
+  - digest
+personal_connectors:
+  - gmail:send_email
+egress:
+  - api.example.com
+  - "*.internal.example.com"
+crons:
+  - schedule: "0 6 * * *"
+    path: /api/refresh
+```
+
+Declare **only what the worker actually uses**. A deploy whose manifest adds operations the
+deployer doesn't hold lands as a **pending diff awaiting approval** rather than silently granting
+itself power.
+
+```bash
+railcode manifest validate        # strict local parse, before deploying
+railcode manifest show <app>      # the ratified doc + any pending diff
+```
+
+Two keys are refusals rather than pass-through when absent — `agents` and `personal_connectors`.
+Everything else falls back to the caller's own grants when there is no manifest, which on v2 is
+moot because `run_as: app` is required.

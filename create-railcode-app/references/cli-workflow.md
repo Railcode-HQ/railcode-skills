@@ -3,41 +3,45 @@
 ## Contents
 
 - Install and login
-- Create and develop an app
-- Use app-facing data, saved-query, connector, and LLM commands
+- Create and develop an app (apps v2)
+- Per-app secrets, worker logs, and the migration gate
+- Use org-facing data, saved-query, connector, and LLM commands
 - Deploy and set app access
 - Deploy from CI with an app-scoped deploy token
 - Validate the app authority manifest
 
 Use this reference for exact Railcode CLI behavior relevant to building, testing, and
-deploying a static app on the **multi-tenant** Railcode platform. For managed agents use
+deploying an app on the **multi-tenant** Railcode platform. Written against **CLI 0.2.2**. For managed agents use
 `$create-railcode-agent`; for organization administration use `$manage-railcode-org`.
 
 The CLI ships as the npm package **`railcode`**. The app-building subset is:
 
 ```
-railcode login [--api-url <url>] [--paste|--no-browser]   Sign in (browser or pasted code) and mint a personal API token
+railcode login [--api-url <url>] [--paste|--no-browser]   Sign in and mint a personal API token
 railcode login --setup-token <token>          Non-interactive onboarding login (one-time setup token)
-railcode init <app> [dir] [--template static|react]   Scaffold an app (into ./<app>/, or an existing dir)
-railcode dev [--port <n>] [--asset-port <n>] [--reset]   Run the app locally against an emulated /_api
-railcode deploy [--private] [--no-source] [--force]   Build (if configured) and deploy the app here
-railcode pull [<deploy>] [--app <slug>] [--dir <path>] [--force]   Download a deploy's stored project source
-railcode design-system [get|set] ...          Print the org's design-system guidance, or replace it (set: admin)
+railcode init <app> [dir] [--template hono+vite|hono+static|tanstack|static]   Scaffold an app
+railcode dev [--port <n>] [--reset]           Run the frontend AND the worker locally
+railcode deploy [--private] [--no-source] [--force]   Build + deploy the static tree and worker
+railcode pull [<deploy>] [--app <slug>] [--dir <path>] [--force]   Download a deploy's stored source
+railcode secrets <set|import|ls|rm> ...       Per-app worker secrets — write-only (apps v2)
+railcode logs app [<invocation_id>] [--app <slug>] [--follow]   Worker invocations + traces (apps v2)
+railcode migrate [--app <slug>] [--yes]       Move a v1 app to apps v2 (ONE-WAY)
+railcode manifest <validate|show> ...         Validate manifest.yaml / show the ratified authority
+railcode design-system [get|set] ...          Print the org's design-system guidance
 railcode db <list|query> ...                  List data connectors / run ad-hoc SQL
-railcode query <list|run> ...                List/invoke saved queries by name
-railcode connector <list|docs|fetch> ...     Inspect/call service connectors
-railcode personal-connectors <list|tools|connect|call> ...   Your own connected accounts (Gmail, Slack, ...)
+railcode query <list|run> ...                 List/invoke saved queries by name
+railcode connector <list|docs|fetch> ...      Inspect/call service connectors
+railcode personal-connectors <list|tools|connect|call> ...   Your own connected accounts
 railcode llm <providers|models>               List the LLM providers/models apps can call
-railcode manifest <validate|show> ...         Validate manifest.yaml / show an app's ratified authority manifest
-railcode app kv <collections|list|get|set|delete|drop> ...   Read/write the deployed app's KV store (owner)
+railcode app kv <collections|list|get|set|delete|drop> ...   Read/write the deployed app's KV (owner)
 railcode app files <list|download|upload|delete> ...   Read/write the deployed app's files (owner)
-railcode apps show <app>                      Show one app's details, incl. your own rights
-railcode apps access <app>                    Inspect the deployed app's access policy
+railcode apps show <app> [--json]             App details, incl. your rights and its generation
+railcode apps access <app>                    Inspect the access policy
 railcode apps set-access <app> ...            Set mode/members/editors (manage rights)
-railcode apps add-editor|remove-editor <app> <email|uuid>   Grant/revoke co-deploy rights (manage)
-railcode apps add-viewer|remove-viewer <app> <email|uuid>   Grant/revoke view rights (edit; restricted only)
-railcode ci github [--repo <owner/name>] [--branch <name>]   Wire the app up to deploy from GitHub Actions (0.1.36+)
-railcode token <create|list|revoke> ...       App-scoped deploy tokens for CI (edit tier) (0.1.36+)
+railcode apps add-editor|remove-editor <app> <email|uuid>   Grant/revoke co-deploy rights
+railcode apps add-viewer|remove-viewer <app> <email|uuid>   Grant/revoke view rights (restricted only)
+railcode ci github [--repo <owner/name>] [--branch <name>]   Deploy from GitHub Actions
+railcode token <create|list|revoke> ...       App-scoped deploy tokens for CI (edit tier)
 railcode --version
 railcode --help
 ```
@@ -112,93 +116,148 @@ or already used, generate a fresh prompt from the dashboard.
 ## Create An App
 
 ```bash
-railcode init <app> [dir] [--template static|react]
+railcode init <app> [dir] [--template hono+vite|hono+static|tanstack|static]
 ```
 
-Behavior:
-
-- Validates the app slug against `^[a-z0-9][a-z0-9-]{0,62}$` (a DNS label: lowercase
-  letters, digits, dashes).
+- Validates the app slug against `^[a-z0-9][a-z0-9-]{0,62}$` (a DNS label).
 - Scaffolds a **single self-contained directory** — `./<app>/` by default, or the optional
-  `[dir]`: `railcode init foobar .` scaffolds into the current
-  directory, `railcode init foobar somedir` into `./somedir`. There is no
-  `apps/`/`app-bundles/` workspace split, and no template repo is copied.
-- A non-empty target is fine, but an
-  existing `railcode.json` is refused unless `--force`. The "Next:" hint prints
-  `cd <dir>` only when files landed outside the cwd.
+  `[dir]` (`railcode init foo .` scaffolds into the current directory). A non-empty target is
+  fine, but an existing `railcode.json` is refused unless `--force`.
+- **Every app created is generation 2 (apps v2).** There is no v1 template and no downgrade.
 
-Templates:
+The four stacks — and **the CLI owns the build for all of them**, so the app declares no
+bundler, no `wrangler`, no Cloudflare package, and no worker build script:
 
-- **`react`** (default) — a React, Vite, Zustand, and TypeScript starter that builds to
-  `dist/`, with `railcode.json` `{ "app": "<slug>", "build": "npm run build", "dist": "dist" }`.
-  Run `npm install` before `railcode dev`/`railcode deploy`.
-- **`static`** — a no-build app: `index.html` that loads `/_api/sdk.js` and demos
-  `await me()` + `db.collection().put/get`, plus `railcode.json` with `{ "app": "<slug>",
-  "dist": "." }`. No dependencies, no build step.
+| Template | Frontend | Worker | Layout |
+|---|---|---|---|
+| **`hono+vite`** (default) | Vite + React | Hono | `frontend/` + `server/index.ts` |
+| `hono+static` | one `index.html`, no build | Hono | `frontend/index.html` + `server/index.ts` |
+| `tanstack` | TanStack Start (SPA mode) | server fns + `/api/*` | file routes; data routes need `ssr: false` |
+| `static` | static tree | **none** | pure hosting; works self-hosted |
 
-Treat the starter as functional scaffolding, not a style guide.
+Each worker template scaffolds a small **platform tour** — identity (`ctx.user` + `appUsers`), a
+todo list on `db`, files, and the read-only org surfaces — over a frontend that only fetches the
+worker's `/api` routes. Read it, then delete it. Treat it as functional scaffolding, not a style
+guide.
 
-The CLI runs **your app's** package manager for builds and dev — detected from a
-`packageManager` field or lockfile (pnpm/yarn/bun), defaulting to **`npm`** when there's no
-lockfile. Examples use `npm`; use whatever your
-app declares.
+`railcode.json` keys:
+
+```json
+{
+  "app": "my-app",
+  "type": "hono+vite",
+  "dist": "dist/client",
+  "server": "dist/server/index.js"
+}
+```
+
+`type` drives build, dev, and deploy. `server` names the built worker module; `dist` the static
+output. **Never add `"server"` to a generation-1 app** — the deploy is refused with `422`.
+
+### A minimum-CLI floor gates NEW apps
+
+Creating an app requires a current CLI (default floor **0.2.0**); a stale CLI would scaffold
+v1-shaped bundles and is refused. **Deploys to existing apps are never gated** — a v1 app keeps
+deploying from any CLI.
 
 ## Local Dev
 
 ```bash
-railcode dev [--port <n>] [--asset-port <n>] [--reset]
+railcode dev [--port <n>] [--reset]
 ```
 
-Run it from the app directory (any directory with a `railcode.json` that has an `"app"`
-slug). Behavior:
+Run it from the directory containing `railcode.json`. It serves the frontend **and the worker**,
+carving exactly the paths production carves (`/api/*`, `/_serverFn/*`).
 
-- Serves the app on a single loopback origin, starting at `http://127.0.0.1:7331` and
-  climbing (`7332`, …) when the port is busy. Print-and-open the URL it reports.
-- **Static mode**: serves files straight from the app root (the deploy resolution mirrored).
-- **Asset mode**: when `package.json` has a `dev` script (or `railcode.json` sets
-  `dev.command`), the CLI runs the app's own dev server (Vite) and reverse-proxies it,
-  tunnelling the HMR WebSocket. `--asset-port` / `railcode.json` `dev.port` set the starting
-  Vite port (default `5173`). It does **not** install dependencies for you — if
-  `node_modules` is missing it tells you to install them first (`npm install`, or your app's
-  package manager).
-- `--reset` wipes this app's local KV/files before starting.
+- **`tanstack`** — the Vite preset runs the worker in embedded workerd; the CLI proxies `/api`
+  and `/_serverFn` to Vite.
+- **`hono+vite` / `hono+static` / bring-your-own** — the CLI bundles the worker with esbuild
+  (watched), runs it **in-process**, and serves the same paths. A rebuild re-imports the worker
+  on the next request.
 
-`railcode dev` emulates the `/_api/*` data plane on local disk and proxies the rest to your
-real instance:
+Either way the worker calls the CLI's local data plane over HTTP with the **same wire shape as
+production**, so "works in `railcode dev`" means "works deployed."
 
-- The SDK and synthetic identity/app-member responses are served locally. Design-system
-  guidance comes from the real organization when logged in and is otherwise empty.
-- `/_api/kv/*` — JSON KV stored under `~/.railcode/dev/<instance>/<app>/kv.json`, queried by
-  the same engine production uses.
-- `/_api/files*` — bytes under `~/.railcode/dev/<instance>/<app>/files/`, metadata in
-  `files.json`.
-- `/_api/connections`, `/_api/sql`, `/_api/queries` + `/_api/queries/{name}`,
-  `/_api/llm/generate`, `/_api/llm/stream`, `/_api/llm/providers`, `/_api/email` +
-  `/_api/email/send`, `/_api/service-connectors` + `/_api/service-connectors/request` —
-  **proxied to the real instance** with your saved token as the **signed-in user** — **not** a
-  deployed app, so **no `railcode deploy` is needed first**.
-  These hit the org's
-  real provider, quota, databases, connectors, and mail — **real spend and real data**.
-  Authority is your own grants (a deployed app is instead bound by its ratified manifest).
-  These calls can incur real spend and side effects, including sending email.
-- `/_api/personal-connections*` (`personalConnections.list/connect/tools/call`) is **also
-  proxied**, to the real `/api/personal-connections/*` user plane as you, the signed-in
-  developer — but unlike every proxy above, it is **not** simply bound by your own grants.
-  The dev server reads the app's local `manifest.yaml` `personal_connectors:` and reproduces
-  the exact prod app-plane gate: `list()`/`tools()` filter to your declared toolkits, `connect()`
-  requires the toolkit be declared, and `call()` resolves the tool's toolkit and refuses
-  anything undeclared with a `403` — **before** the request ever reaches the user plane. An
-  app with no `personal_connectors:` declared can call none of it locally, same as in prod.
+What is local vs forwarded:
 
-When you're **not logged in**, the list endpoints (`connections`, `service-connectors`,
-`llm/providers`) degrade to empty and the call endpoints (`llm`, `sql`, `email/send`, a
-connector `request`, and every `personal-connections/*` route) return `503`
-(never `401`, which the SDK would treat as a session lapse and reload-loop on). The startup
-banner states which mode you're in.
+| Surface | Under `railcode dev` |
+|---|---|
+| `db`, `files` | **Local scratch store** on disk. Flat scope. `--reset` seeds fresh. Never touches live data |
+| SQL, saved queries, LLM, email, service connectors, personal connectors, **agents** | **Forwarded to the real instance** under a CLI-minted dev token carrying your identity |
+| `secrets` | Read from your local environment |
+| Cron | Not scheduled — trigger the route by hand (remember: **POST**) |
 
-The local state directory is namespaced by `(instance, org)` so two orgs' same-slug apps
-never share KV/files. Concurrent `railcode dev` sessions for the same app/org share that
-directory.
+Forwarded calls hit real providers, real data, and real spend — including sending email and
+starting real agent runs. Authority for them is manifest-bounded exactly as in production, so
+authority failures reproduce locally.
+
+Local dev storage is separate from the deployed app's: `railcode app kv` / `railcode app files`
+read and write the **live** app, never the local emulation.
+
+## Per-App Secrets (apps v2)
+
+```bash
+railcode secrets set NAME          # hidden prompt, or piped on stdin — never inline
+railcode secrets import [.env]     # every NAME=value line of an env file
+railcode secrets ls                # names + set-at + value digest, never values
+railcode secrets rm NAME
+```
+
+Values are **write-only**: they can be replaced or removed, never read back. The worker reads
+them ambiently as `secrets.NAME`.
+
+Secrets are **live app state, not part of a deploy**. Every activation — deploy, revert, cold
+revert — re-applies the **current** set before the flip is observable, so a revert can never
+resurrect a rotated value. Writes serialize with deploys.
+
+Caps: 64 per app, 5 KB per value.
+
+## Worker Logs (apps v2)
+
+The v2 debugging surface. There is no generation-1 equivalent.
+
+```bash
+railcode logs app --app <slug>              # invocations: time, outcome, status, method, path, who
+railcode logs app --app <slug> --follow     # tail
+railcode logs app <invocation_id> --app <slug>   # ONE full trace, as JSON
+```
+
+Every invocation — http or cron — produces a record: who called, which path, which deploy,
+outcome, duration. A single trace additionally carries the worker's `console` lines, any uncaught
+error, and **every governed operation with its verdict**, so a refusal appears as `denied` with
+the resource name instead of a silent failure.
+
+`invocation_id` joins the gate record, the logs, and every data-plane audit row — one request
+reads as one trace. Retention is short (about 14 days).
+
+## The Migration Gate (v1 → v2)
+
+```bash
+railcode migrate [--app <slug>] [--yes]
+```
+
+**One-way and irreversible.** It flips the app's `generation` from 1 to 2. Immediately:
+
+- the browser SDK stops working for that app — `/_api` data calls refuse;
+- the app's user/role-scoped browser data **freezes** (readable by the new worker through
+  `db.scoped()` / `db.scopedRole()`, writable by nothing);
+- unscoped data is untouched — the v2 flat store **is** that same app scope.
+
+Reverting a deploy never un-migrates. It prompts on a TTY; `--yes` is required
+non-interactively.
+
+**Do not run this until the v2 build is finished and validated.** Between `migrate` and the next
+`deploy` the app is down for its users, and that window cannot be rehearsed — a worker deploy is
+refused (`422`) while the app is still generation 1. See
+[migration.md](migration.md) for the full procedure and the new-slug alternative.
+
+## Check An App's Generation
+
+```bash
+railcode apps show <app> --json | grep generation      # 1 = legacy, 2 = apps v2
+```
+
+The plain-text output does not print it; use `--json`.
 
 ## Read The Design System
 
@@ -581,7 +640,7 @@ railcode apps set-access <app> --mode organization --editors dana@x.io   # edito
 Modes: `organization` (every org member, the default), `private` (owners + editors),
 `restricted` (owners + editors, plus explicitly-granted members). Org admins/owners bypass
 per-app access entirely.
-See [platform-magic.md](platform-magic.md) for the access model.
+See [v1-legacy.md](v1-legacy.md) for the access model.
 
 Grants come in **three tiers** — owner, **editor**, member (viewer):
 
@@ -747,17 +806,12 @@ Always write a `manifest.yaml` beside
 operations an app performs and whose authority they run under**. It's separate from
 `railcode.json` (which stays `{ app, build?, dist?, dev? }`) and is uploaded on deploy.
 
-For pass-through apps, write an explicit minimal manifest:
+**On apps v2, `run_as: app` is mandatory.** The worker *is* the app principal — there is no
+browser caller whose personal grants could stand in — so a v2 deploy declaring `run_as: user`
+is refused. (`run_as: user` remains the pass-through mode for generation-1 apps.)
 
-```yaml
-run_as: user
-```
-
-`run_as: user` means every call runs as the signed-in caller with *their* grants; the app
-borrows no authority and there is nothing to ratify.
-
-A manifest with `run_as: app` makes the app run privileged operations under its own **ratified**
-authority (so callers who lack those grants can still use the feature through the app). Shape:
+`run_as: app` makes the app run privileged operations under its own **ratified** authority, so
+callers who lack those grants can still use the feature through the app. Shape:
 
 ```yaml
 run_as: app                 # or: user for pass-through apps
@@ -768,7 +822,9 @@ llm: true                   # LLM gateway access (incl. tool-calling loops; the 
                             # tool's run() makes still need their own declarations here)
 email: true                 # transactional email gateway access (email.send)
 adhoc_sql: [analytics]      # only when the user explicitly requested direct/ad-hoc SQL
-agents: [sales-digest]      # managed agents this app may invoke (agents.invoke)
+agents: [sales-digest]      # managed agents this app may start (agents.start/invoke).
+                            # MISSING = REFUSAL, not pass-through — an undeclared agent 403s
+                            # even for a caller who could invoke it from the dashboard.
 personal_connectors:        # which of the CALLER'S OWN connected accounts + tools this
   - gmail:send_email        # app may call via personalConnections.call() — a toolkit list,
   - slack                   # not a boolean; "gmail" (whole toolkit) or "gmail:*" both work,

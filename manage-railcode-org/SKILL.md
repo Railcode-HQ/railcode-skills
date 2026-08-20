@@ -1,7 +1,7 @@
 ---
 name: manage-railcode-org
-description: Administer a Railcode organization through the Railcode CLI. Use for app access and ownership, members and system roles, custom roles and granular grants, saved-query publishing, data connections, service connectors, analytics, and org observability logs. Do not use for building static apps or authoring managed-agent manifests.
-version: 0.1.2
+description: Administer a Railcode organization through the Railcode CLI. Use for app access and ownership, members and system roles, custom roles and granular grants, saved-query publishing, data connections, service connectors, analytics, and org observability logs. Do not use for building apps or authoring managed-agent manifests.
+version: 0.2.0
 ---
 
 # Manage Railcode Org

@@ -1,7 +1,52 @@
-# Platform Magic
+# Generation 1 (legacy browser-SDK apps)
 
-Use this reference when an agent needs to explain or rely on Railcode's zero-config auth,
-data, SDK, access, SQL, service-connector, or LLM behavior on the **multi-tenant** platform.
+> **Read this only to maintain an app that already exists at generation 1.**
+>
+> **Never build anything new from this file.** Every app created today is generation 2
+> (apps v2), where there is no browser SDK at all — the platform will not serve `/_api/sdk.js`
+> data calls to a v2 app, so a page written from this reference cannot work there. For new
+> work read [worker-sdk.md](worker-sdk.md); to move an existing app across read
+> [migration.md](migration.md).
+
+## What still works on a v1 app
+
+Generation 1 apps keep running, and you can keep changing them indefinitely:
+
+- **`railcode deploy` is never gated by generation or CLI version.** The minimum-CLI floor
+  applies to *creating* apps, not to deploying an existing one. A current CLI deploys a v1 tree
+  exactly as an old one did.
+- **`railcode dev` still serves `/_api/sdk.js`** and emulates the v1 data plane, so local
+  development is unchanged.
+- `railcode pull`, `railcode app kv`, `railcode app files`, `railcode apps ...`, analytics, and
+  deploy history all behave the same.
+
+## What you can no longer do
+
+- **You cannot create a new v1 app.** `railcode init` scaffolds only v2 stacks, and the server
+  assigns generation 2 to every new app. There is no flag and no downgrade.
+- **Never add a `"server"` key to a v1 `railcode.json`.** The deploy is refused with `422`. A
+  worker requires generation 2, which requires the one-way migration gate.
+- **Migration is one-way.** Once an app is generation 2 it never goes back, and its scoped
+  browser data freezes. See [migration.md](migration.md).
+
+## Keeping a v1 app healthy
+
+Prefer small, in-place changes. When someone asks for a substantial new capability — a backend,
+a scheduled job, per-app secrets, real server-side authorization — that is the signal to discuss
+migrating rather than to stretch the browser SDK further. Say so explicitly, with the one-way
+caveat, and let the user decide.
+
+Check which generation you are actually holding before you touch anything:
+
+```bash
+railcode apps show <app> --json | grep generation     # 1 = legacy, 2 = apps v2
+```
+
+---
+
+The rest of this file documents the generation-1 platform as it behaves today: zero-config auth,
+the browser SDK globals, access policies, KV/files scoping, SQL, service connectors, and the
+in-page LLM.
 
 ## Request Routing
 
