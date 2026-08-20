@@ -10,17 +10,17 @@ work across Claude Code, Codex, Cursor, and other agents.
 
 | Skill | Description |
 | --- | --- |
-| [`create-railcode-app`](create-railcode-app/SKILL.md) | Build, modify, debug, and deploy Railcode static apps end-to-end — scaffolding with the CLI, wiring the zero-config SDK globals, configuring access policies, testing with `railcode dev`, and deploying. |
+| [`create-railcode-app`](create-railcode-app/SKILL.md) | Build, modify, debug, and deploy Railcode apps end-to-end — scaffolding with the CLI, writing the backend worker with `@railcode/sdk`, configuring access policies, testing with `railcode dev`, migrating legacy v1 apps, and deploying. |
 | [`create-railcode-agent`](create-railcode-agent/SKILL.md) | Build, test, publish, invoke, and schedule organization or personal Railcode managed agents. |
 | [`manage-railcode-org`](manage-railcode-org/SKILL.md) | Administer apps, members, roles/grants, saved queries, connections, service connectors, analytics, and logs through the CLI. |
 
 ## Examples
 
-Worked, deployable Railcode apps and agents live in
-[`Railcode-HQ/railcode-examples`](https://github.com/Railcode-HQ/railcode-examples). Each skill
-carries the slice it needs — `create-railcode-app` the `apps/` examples, `create-railcode-agent`
-the `agents/` ones — and tells agents to copy a single example directory (no git) when it covers
-what the user is asking for.
+Worked Railcode apps and agents live in
+[`Railcode-HQ/railcode-examples`](https://github.com/Railcode-HQ/railcode-examples).
+
+Every example there is **apps v2** — a static `frontend/` plus a `server/index.ts` worker — so
+they can be copied into a new app as well as read.
 
 ## Install
 

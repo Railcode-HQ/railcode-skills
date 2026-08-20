@@ -56,6 +56,46 @@ and an `archived` column appears in the table only when the listing actually con
 
 `apps access` includes direct policy grants and access conferred through roles/grants.
 
+### App generation (v1 vs apps v2)
+
+Every app carries a platform-assigned **generation**: `1` = the legacy browser-SDK line, `2` =
+apps v2 (a static frontend plus a backend worker). Every app created today is `2`; existing apps
+were backfilled to `1`.
+
+```bash
+railcode apps show <app> --json | grep generation      # the text output does NOT print it
+```
+
+Generation is **sticky** — deploys and reverts never change it. The only transition is the
+one-way migration gate, run by the app's owner from the app directory:
+
+```bash
+railcode migrate --app <slug> --yes
+```
+
+It is irreversible. It kills the v1 browser data plane for that app immediately and freezes its
+user/role-scoped browser data (readable by the new worker, writable by nothing); unscoped data is
+untouched. Do not run it on someone's behalf without their explicit go-ahead — the app is down
+for its users until a worker deploy lands. Direct app authors to `$create-railcode-app`.
+
+### Worker observability (generation 2 only)
+
+```bash
+railcode logs app --app <slug> [--follow]        # invocations: path, status, duration, caller
+railcode logs app <invocation_id> --app <slug>   # one trace: console, errors, ops + verdicts
+```
+
+This is per-app and available to people with edit rights on the app — distinct from the
+org-wide `railcode logs <connector|service-connector|llm|email|agent>` below, which is admin-only.
+Retention is about 14 days.
+
+### Per-app worker secrets (generation 2 only)
+
+`railcode secrets <set|import|ls|rm>` manages an app's worker secrets. Values are **write-only**
+— `ls` shows names, set-at, and a digest, never values. They are live app state, so every deploy
+and revert re-applies the current set and a revert can never resurrect a rotated value. Caps: 64
+per app, 5 KB per value.
+
 ### App storage (owner or `app:manage_any`)
 
 ```bash
@@ -85,13 +125,11 @@ command-by-command surface is in `$create-railcode-app`'s CLI workflow reference
 railcode members list
 railcode members set-role <email|uuid> --role admin|member
 railcode members remove <email|uuid>
-railcode members add --email <e> --name <n> --password <p> --role admin|member
-railcode members add --email <e> --name <n> --password <p> --role member --no-password-change
 ```
 
 Any member may list members. Mutations require admin authority. The owner tier is not
-assignable through `set-role`. `members add` is for self-hosted provisioning; by default the
-new user must change the supplied password.
+assignable through `set-role`. **There is no CLI command that creates a member** — a new
+person joins through the invite flow in the web app, then `set-role` adjusts their tier.
 
 ## Custom Roles and Grants
 
