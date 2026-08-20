@@ -279,6 +279,14 @@ finished answer, `stream` yields text and step events live. The one that refuses
 worker to execute a `run`. (Needs `@railcode/sdk` ≥ 0.3.0; before that, streamed loops failed on
 their first turn.)
 
+**Streaming to the page goes through `toNdjson()`.** Do not hand-roll a `ReadableStream` — the
+helper turns a mid-stream failure into an error frame (the 200 is already sent, so it cannot be a
+status) and stops the run when the client hangs up.
+
+```ts
+app.post("/api/chat", async (c) => toNdjson(llm.stream(await c.req.json(), { tools })));
+```
+
 **Never feed a file into the LLM.** File contents, file URLs, and file-derived payloads are a
 managed agent's job, always.
 
@@ -342,5 +350,6 @@ Rules worth internalizing:
 | A `GET` cron route | 404s on every fire | Accept POST |
 | Cron calling `agents.start()` / a personal connector | `409` | Give the agent its own schedule |
 | Swallowing `ApiError` into a 500 | The UI can't tell quota from forbidden | Relay `.status` verbatim |
+| A hand-rolled `ReadableStream` for a stream | A mid-stream failure vanishes; a hang-up keeps burning tokens | `toNdjson(source)` |
 | A code-split or CJS worker bundle | Deploys, then crashes at invocation | One self-contained ESM module |
 | Adding `"server"` to a generation-1 app | Deploy `422` | Migrate first — one-way |

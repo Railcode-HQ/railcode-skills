@@ -17,7 +17,7 @@ import { ctx, db, files, llm, agents, query, connector, email, secrets } from "@
 - [`db` — the flat store](#db--the-flat-store)
 - [`files`](#files)
 - [SQL and saved queries](#sql-and-saved-queries)
-- [`llm`](#llm)
+- [`llm`](#llm) · [`toNdjson()`](#streaming-to-your-frontend--tondjson)
 - [Managed agents](#managed-agents)
 - [Service connectors](#service-connectors)
 - [Personal connectors](#personal-connectors)
@@ -180,6 +180,33 @@ Requires `@railcode/sdk` ≥ 0.3.0. Earlier builds routed the internal stream th
 so every streamed tool loop died on its first turn with `tool_loop_error`.
 
 Manifest: `llm: true`. Per-app daily token cap; exceeding it returns a typed `429`.
+
+### Streaming to your frontend — `toNdjson()`
+
+Never hand-roll the `ReadableStream`. `toNdjson(source, opts?)` turns any iterable of JSON values
+into an ndjson `Response` you return straight from a route:
+
+```ts
+app.post("/api/chat", async (c) => {
+  const { messages } = await c.req.json();
+  return toNdjson(llm.stream(messages, { tools }));
+});
+```
+
+It owns the two things that are easy to get wrong:
+
+- **A mid-stream failure cannot be an HTTP status** — the 200 is already sent. It becomes a
+  terminal `{"type":"error", error, message}` frame, and `errorFrame()` keeps the platform's
+  typed code (`daily_token_limit_exceeded`, `provider_auth_error`, …) so the browser maps it to
+  advice exactly as on a non-streamed call.
+- **A client that hangs up must stop the work.** Cancelling closes the source generator, so an
+  abandoned run stops spending tokens.
+
+It takes ANY iterable, so a route that interleaves its own frames and persists the turn is still
+one call — write an async generator and return `toNdjson(frames())`. See `apps/chat`.
+
+The browser side is ~20 lines: read, split on `\n`, `JSON.parse` each line, and keep a buffer
+because a network chunk can split a line. Copy it from `apps/chat/frontend/src/lib/api.ts`.
 
 ## Managed agents
 
