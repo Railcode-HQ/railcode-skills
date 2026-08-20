@@ -320,17 +320,68 @@ worker reads, with no bridge at all.
 
 ## Cron
 
+> **Alpha — expect this to change.** Function crons are the newest part of apps v2. The
+> caller-less trigger model below is settled and the refusals are deliberate, but the limits
+> it produces are under active review. `agent_runs.triggered_by_user_id` is already nullable
+> precisely so that relaxing the agent restriction stays a design decision rather than a
+> migration. **Do not build an app whose core loop needs a cron to do something this section
+> says it cannot** — take the alternative below instead.
+
 ```yaml
 crons:
   - schedule: "0 6 * * *"
     path: /api/refresh
 ```
 
-Rules worth internalizing:
+**A cron invocation has no caller.** `ctx.user` is `null` and `ctx.trigger` is `"cron"`. That
+one fact produces every limit here.
 
-- The route must accept **POST**.
-- `ctx.user` is `null`. Anything that needs a caller — `personalConnections`, `agents.start()` —
-  refuses with `409`. For scheduled agent work, give the **agent** its own schedule.
+### What a cron cannot do
+
+| Refused (`409`) | Why |
+|---|---|
+| `personalConnections.*` — every op (`list`, `connect`, `tools`, `call`) | "Personal" means one human's own account. With no caller there is no answer to *whose* |
+| `agents.start()` | A run is owned by `(app, caller)`. No caller, no owner |
+| `agents.get()` | The same ownership pair — a cron cannot even poll a run an **http** invocation started |
+
+All refuse up front, before any upstream call.
+
+**The fourth limit is your own authorization code, and it is the one that bites.** A route that
+reads `ctx.user.roles` or filters by `ctx.user.uuid` will throw under cron — or worse, return
+everything, because the flat store enforces nothing. Branch on `ctx.trigger`, or guard early:
+
+```ts
+if (!ctx.user) return c.json({ error: "cron cannot do this" }, 409);
+```
+
+### What a cron CAN do
+
+Everything else: `db` (including `db.scoped(kind, ownerUuid)` — the owner is an argument, not the
+caller), `files`, `sql`, `query`/`savedQueries`, `llm`, `email`, `appUsers()`, `secrets`, egress,
+and **org/service connectors** — those are the app's own authority, never a caller's.
+
+That is wider than it first looks. A v2 worker's authority is its ratified `run_as: app` manifest,
+so `ctx.user` is *attribution*, not permission. Cron loses only the surfaces whose authority is
+intrinsically one specific person.
+
+### Scheduled work on someone's personal account
+
+Don't wait for the app cron — the platform already does this, on the **agent** plane, with a safer
+identity:
+
+1. Create a **personal** agent and give it the connector (Granola, Gmail, ...).
+2. Give the agent its own schedule: `railcode agent schedule`.
+3. The agent writes its results into its owner's USER scope.
+4. Your worker reads them with `db.scoped(ownerUuid)`.
+
+The agent's identity is fixed at `created_by_id`, and its manifest was ratified against that
+field. If the owner leaves the org the run fails loudly instead of acting as somebody else — which
+is exactly why this does not live on the app cron. See `agents/proposals` for the worked example.
+
+### Operational rules
+
+- The route must accept **POST**. A `GET`-only route 404s on every fire and looks like a broken
+  schedule.
 - **At-least-once, and runs may overlap.** Use `ctx.invocationId` as an idempotency key and make
   external side effects safe to repeat. Never promise "exactly once".
 - Caps: 5 schedules per app, 1-minute minimum.
@@ -347,7 +398,7 @@ Rules worth internalizing:
 | A loop of `files.url()` | Burns the subrequest budget | `files.urls(names)` |
 | `llm.streamRaw({ tools })` with `run` handlers | Throws — a relay can't execute a tool | `llm.stream()`, or drop `run` and handle the calls yourself |
 | A `GET` cron route | 404s on every fire | Accept POST |
-| Cron calling `agents.start()` / a personal connector | `409` | Give the agent its own schedule |
+| Cron calling `agents.start()`/`get()` or a personal connector | `409` | Give the agent its own schedule (see [Cron](#cron)) |
 | Swallowing `ApiError` into a 500 | The UI can't tell quota from forbidden | Relay `.status` verbatim |
 | A hand-rolled `ReadableStream` for a stream | A mid-stream failure vanishes; a hang-up keeps burning tokens | `toNdjson(source)` |
 | A code-split or CJS worker bundle | Deploys, then crashes at invocation | One self-contained ESM module |

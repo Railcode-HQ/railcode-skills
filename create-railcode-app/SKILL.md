@@ -336,13 +336,23 @@ quietly build an approximation that can't work.
 
 **Agents and cron**
 
+> **Function crons are alpha and will evolve.** The rules below are real today and the refusals
+> are deliberate, but the limits are under active review. Don't build an app whose core loop
+> needs a cron to do something this table says it can't — see
+> [app-patterns.md](references/app-patterns.md#cron) for the supported alternative.
+
 | Constraint | Detail |
 |---|---|
-| Cron cannot start an agent run | A cron invocation has no caller, so a run would have no owner — refused with `409`. Give the agent **its own schedule** instead |
-| Cron caps | 5 schedules per app, 1-minute minimum |
+| A cron invocation has **no caller** | `ctx.user` is `null`, `ctx.trigger` is `"cron"`. Every limit below follows from this one fact |
+| Cron cannot start an agent run | A run is owned by `(app, caller)`, so a cron-started run would have no owner — `409`. Give the agent **its own schedule** instead |
+| Cron cannot **poll** an agent run either | `agents.get()` matches the same `(app, caller)` pair, so a cron can't read back a run an http invocation started — also `409` |
+| Personal connectors don't compose with cron | Every op acts as `ctx.user`; cron has none, so all of `list`/`connect`/`tools`/`call` refuse with `409` |
+| For scheduled work on a personal account, use a **personal agent** | Give it the connector and its own `railcode agent schedule`; it writes to its owner's user scope and your worker reads that with `db.scoped(ownerUuid)`. Its identity is fixed at `created_by_id`, so it fails loudly if the owner leaves rather than acting as someone else |
+| Your own authz code must handle a null caller | A shared route reading `ctx.user.roles` throws under cron — or returns everything. The flat store enforces nothing. Guard with `if (!ctx.user)` |
+| Everything else still works under cron | `db` (incl. `db.scoped`), `files`, `sql`, `query`, `llm`, `email`, `appUsers()`, `secrets`, egress, and **org/service connectors** — a v2 worker's authority is its `run_as: app` manifest, not the caller |
+| Cron caps | 5 schedules per app, 1-minute minimum. A schedule pauses with a visible reason if the current deploy has no worker |
 | Cron is at-least-once and may overlap | `ctx.invocationId` is your idempotency key. Never promise "exactly once" |
 | Cron dispatches **POST** | A route declared `GET`-only will 404 on every fire and look like a broken schedule |
-| Personal connectors don't compose with cron | Every call acts as `ctx.user`; cron has none, so it refuses with `409` |
 | Agent runs are never awaited in-band | `agents.start()` returns a queued run; `agents.get(request_id)` reads it back. The worker SDK has **no** call that waits, and a `get()` loop is not one — poll from the frontend or a later invocation |
 | Prefer **org** agents with v2 apps | An org agent writes into the app's shared scope, which **is** a v2 app's flat store. A personal agent writes into its owner's user scope, which on a migrated app is frozen and read-only |
 | Not exposed to the worker | The org's role list, and design-system guidance. `ctx.user.roles` gives the caller's own roles; fetch design guidance at build time with `railcode design-system` |

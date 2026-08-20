@@ -245,8 +245,10 @@ that started the run.
   connectors, **a missing declaration is a refusal, not pass-through** — an undeclared agent is
   `403 agent "x" was not in the manifest`, even one the caller could invoke from the dashboard
   themselves. An agent that doesn't exist is `404`.
-- **Cron cannot start a run.** No caller means no run owner: `409`. Give the agent **its own
-  schedule** instead of driving it from an app cron.
+- **Cron cannot start a run — or poll one.** No caller means no run owner, and `agents.get()`
+  matches the same `(app, caller)` pair, so both refuse with `409`. Give the agent **its own
+  schedule** instead of driving it from an app cron. (Function crons are alpha; see
+  [app-patterns.md](app-patterns.md#cron).)
 - **A run is owned by `(app, caller)`.** `agents.get()` reads only runs *this app* started for
   *this caller*. A run started from the dashboard is `404` to the worker, and vice versa.
 - **Prefer org agents.** An **org** agent's `app_data_write` lands in the app's shared scope,
@@ -311,7 +313,9 @@ declaration is the only bound. An app declaring `gmail:send_email` can send as y
 your inbox. Undeclared → `403`; not yet connected → `409` (surface it as a "Connect your account"
 prompt).
 
-**Does not compose with cron** (`409`): every call acts as `ctx.user`, and cron has none.
+**Does not compose with cron** (`409`): every op acts as `ctx.user`, and cron has none. For
+scheduled work on a personal account, use a **personal agent** with its own
+`railcode agent schedule` — see [app-patterns.md](app-patterns.md#cron).
 
 ## `appUsers` and `dataConnectors`
 
