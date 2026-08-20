@@ -345,7 +345,7 @@ quietly build an approximation that can't work.
 | Cron is at-least-once and may overlap | `ctx.invocationId` is your idempotency key. Never promise "exactly once" |
 | Cron dispatches **POST** | A route declared `GET`-only will 404 on every fire and look like a broken schedule |
 | Personal connectors don't compose with cron | Every call acts as `ctx.user`; cron has none, so it refuses with `409` |
-| Agent runs are never awaited in-band | `agents.start()` returns a queued run. `agents.invoke()` polls under a deadline and throws `AgentRunPending`; the run survives |
+| Agent runs are never awaited in-band | `agents.start()` returns a queued run; `agents.get(request_id)` reads it back. The worker SDK has **no** call that waits, and a `get()` loop is not one — poll from the frontend or a later invocation |
 | Prefer **org** agents with v2 apps | An org agent writes into the app's shared scope, which **is** a v2 app's flat store. A personal agent writes into its owner's user scope, which on a migrated app is frozen and read-only |
 | Not exposed to the worker | The org's role list, and design-system guidance. `ctx.user.roles` gives the caller's own roles; fetch design guidance at build time with `railcode design-system` |
 

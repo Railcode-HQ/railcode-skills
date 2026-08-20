@@ -312,8 +312,9 @@ app.get("/api/extract/:id", async (c) => {
 });
 ```
 
-The frontend polls `/api/extract/:id`. Do not try to hold the request open — see
-[worker-sdk.md](worker-sdk.md#managed-agents) for `agents.invoke()` and its deadline.
+The frontend polls `/api/extract/:id`. Do not try to hold the request open — the worker SDK
+gives you no way to, and a `get()` loop drains the subrequest budget and still outlives its
+token. See [worker-sdk.md](worker-sdk.md#managed-agents).
 
 **Results can also arrive by themselves.** An **org** agent's `app_data_write` lands in the app's
 shared scope, which **is** your flat store — so an agent can write straight into a collection your

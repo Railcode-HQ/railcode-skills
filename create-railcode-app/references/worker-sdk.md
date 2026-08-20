@@ -226,27 +226,21 @@ budget and a token that expires; an agent run is minutes of work. The normal sha
 2. Return `request_id` to your frontend (or persist it in `db`).
 3. The frontend polls a route of yours that calls `agents.get()`.
 
-For genuinely short runs there is a convenience:
+**There is no `agents.invoke()` on the worker plane** — no call that waits for a run. Don't
+reach for one, and don't build one out of `get()` in a loop: each poll spends a subrequest, and
+the token expires before a long run finishes, so the loop loses the tail of the very run it is
+waiting on. Persist the handle instead:
 
 ```ts
-const done = await agents.invoke("digest", input, { timeoutMs: 30_000 });
+const run = await agents.start("digest", input);
+await db.collection("jobs").put(jobId, { requestId: run.request_id });
+return c.json({ status: "running", requestId: run.request_id }, 202);
 ```
 
-It polls to a terminal status and **throws `AgentRunPending`** at its deadline (60s default)
-rather than draining the subrequest budget. The run is **not** cancelled — `err.requestId` still
-reads it:
-
-```ts
-try {
-  const done = await agents.invoke("digest", input);
-} catch (err) {
-  if (err instanceof AgentRunPending) {
-    await db.collection("jobs").put(jobId, { requestId: err.requestId });
-    return c.json({ status: "running", requestId: err.requestId }, 202);
-  }
-  throw err;
-}
-```
+The **browser** SDK does have `agents.invoke()`, and the asymmetry is deliberate: a page has
+neither a subrequest budget nor an expiring token, so it can wait out a long run without holding
+anything open server-side. Polling belongs there or in a later invocation — never in the worker
+that started the run.
 
 ### Rules that bite
 
@@ -365,7 +359,7 @@ re-applies the current set, so a revert can never resurrect a rotated value. Cap
 ## Errors
 
 ```ts
-import { ApiError, AgentRunPending, LlmRunError } from "@railcode/sdk";
+import { ApiError, LlmRunError } from "@railcode/sdk";
 ```
 
 `ApiError` carries `.status` and the body. **Relay it verbatim** from your worker routes — the

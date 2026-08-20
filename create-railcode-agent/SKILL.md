@@ -93,7 +93,7 @@ row:
 | Needs a run history someone will audit or debug | **Managed agent** |
 
 The planes compose: the app keeps its chat shell in the page and delegates heavy steps by
-calling `agents.invoke`/`agents.start` from an LLM tool's `run` (the app manifest declares
+calling `agents.start` from an LLM tool's `run` (the app manifest declares
 `agents: [name]`; this agent declares `app_files: [app]` to reach uploaded files).
 
 ## Start From An Example
@@ -152,7 +152,7 @@ authoring behavior:
 - Rewrite the `system` prompt and `input_schema` for the new contract; the example's prompt
   encodes its own step-by-step procedure and input shape.
 - In the app: set `app` in `railcode.json`, rename `package.json`'s `name`, run `npm install`,
-  update the `agents:` list in `manifest.yaml` and every `agents.invoke`/`agents.start` call,
+  update the `agents:` list in `manifest.yaml` and every `agents.start`/`agents.get` call,
   and replace the example's `README.md` if it ships one.
 
 Then test the draft (`railcode agent test --file …`) before creating anything, exactly as in the
@@ -430,8 +430,9 @@ people need a place to trigger it and see its output:
 Four things to know about driving an agent from a v2 companion app:
 
 - `agents.start()` returns the **queued** run immediately. Hand `request_id` to the frontend and
-  let it poll a route that calls `agents.get()`. `agents.invoke()` polls for you but throws
-  `AgentRunPending` at its deadline — the run survives; the wait doesn't.
+  let it poll a route that calls `agents.get()`. There is no worker-side call that waits for a
+  run, and a `get()` loop is not a substitute: it spends a subrequest per poll and its token
+  expires before a long run ends.
 - The app must **declare the agent** (`agents: [<name>]`). A missing declaration is a refusal
   (`403`), not pass-through — even for a caller who could invoke it from the dashboard.
 - **A run is owned by `(app, caller)`.** The app can only read runs it started, for the caller who
@@ -483,8 +484,8 @@ in `$create-railcode-app` → "Limitations"):
   override** — there is no break-glass, so even an org owner/admin can't reach someone else's.
   Creating one needs the broadly-grantable `agent:create` capability, not owner/admin.
 - `delete` archives the agent while keeping run history and requires `--yes` outside a TTY.
-- Use `$create-railcode-app` when building a static app that invokes an agent through
-  `agents.invoke(name, input)`. A privileged app manifest declares `agents: [name]`.
+- Use `$create-railcode-app` when building an app that starts an agent from its worker through
+  `agents.start(name, input)`. A privileged app manifest declares `agents: [name]`.
 - An app can also run its own agentic loop **in the page** with `llm.generate({ tools })` /
   `llm.stream({ tools })` — no managed agent involved. See **When To Use A Managed Agent
   vs The In-Page LLM** at the top of this skill for the split.
