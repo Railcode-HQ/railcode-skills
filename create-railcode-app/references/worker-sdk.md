@@ -162,8 +162,22 @@ Text in, text out. **No embeddings, no vector search, no multimodal input.**
 
 ### Tool loops
 
-`llm.generate({ tools })` with run-bearing tools drives the loop for you. `llm.stream({ tools })`
-**throws** — streaming does not run tool loops. Drive tool loops through `generate`.
+Tools that carry a `run` make the SDK drive the loop: it validates each call's args against the
+schema, executes `run` **in your worker**, feeds `summarize(result)` back, and repeats until the
+model answers. Both entry points do it.
+
+```ts
+await llm.generate({ messages, tools });                    // resolves with the finished answer
+for await (const ev of llm.stream({ messages, tools })) {}  // text + step events, live
+```
+
+`llm.streamRaw()` is the exception, and deliberately: it hands you the ndjson bytes to relay
+straight to a browser, so there is nobody left in the worker to execute a `run`. It refuses
+run-BEARING tools and accepts run-less defs — which is exactly the relay a browser-side loop
+needs (see [migration.md](migration.md#the-interactive-llm-tool-loop)).
+
+Requires `@railcode/sdk` ≥ 0.3.0. Earlier builds routed the internal stream through `streamRaw`,
+so every streamed tool loop died on its first turn with `tool_loop_error`.
 
 Manifest: `llm: true`. Per-app daily token cap; exceeding it returns a typed `429`.
 

@@ -19,9 +19,8 @@ work across Claude Code, Codex, Cursor, and other agents.
 Worked Railcode apps and agents live in
 [`Railcode-HQ/railcode-examples`](https://github.com/Railcode-HQ/railcode-examples).
 
-**The `apps/` examples are currently generation-1 (browser-SDK) apps.** Every app created today
-is apps v2, where there is no browser SDK, so those examples must be read for product patterns
-rather than copied into a new app. Porting them to v2 is tracked as follow-up work.
+Every example there is **apps v2** — a static `frontend/` plus a `server/index.ts` worker — so
+they can be copied into a new app as well as read.
 
 ## Install
 

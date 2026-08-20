@@ -273,8 +273,11 @@ app.post("/api/summarize", (c) => relay(c, async () => {
 }));
 ```
 
-**Tool loops go through `generate`.** `llm.stream({ tools })` throws — streaming does not run tool
-loops.
+**Both entry points run a tool loop** when the tools carry `run`: `generate` resolves with the
+finished answer, `stream` yields text and step events live. The one that refuses tools is
+`llm.streamRaw()`, which exists to relay raw ndjson to a browser — there is nobody left in the
+worker to execute a `run`. (Needs `@railcode/sdk` ≥ 0.3.0; before that, streamed loops failed on
+their first turn.)
 
 **Never feed a file into the LLM.** File contents, file URLs, and file-derived payloads are a
 managed agent's job, always.
@@ -335,7 +338,7 @@ Rules worth internalizing:
 | Assuming a key prefix isolates data | It doesn't; `db` is flat | Verify the owner on read |
 | Using `query()` without paging | Silently drops everything past the first page | Loop until a short page |
 | A loop of `files.url()` | Burns the subrequest budget | `files.urls(names)` |
-| `llm.stream({ tools })` | Throws | Use `generate` |
+| `llm.streamRaw({ tools })` with `run` handlers | Throws — a relay can't execute a tool | `llm.stream()`, or drop `run` and handle the calls yourself |
 | A `GET` cron route | 404s on every fire | Accept POST |
 | Cron calling `agents.start()` / a personal connector | `409` | Give the agent its own schedule |
 | Swallowing `ApiError` into a 500 | The UI can't tell quota from forbidden | Relay `.status` verbatim |

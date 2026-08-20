@@ -1,7 +1,7 @@
 ---
 name: create-railcode-agent
 description: Build, test, publish, invoke, schedule, and update Railcode managed agents with the Railcode CLI. Use when creating an organization or personal managed agent, editing an agent manifest (JSON or YAML), running a draft or saved agent, investigating a run, managing its cron schedule, running it from Slack (@Railcode $agent), pairing it with a companion app, processing files in its sandbox, or using personal connectors (Gmail, Slack, ...) on behalf of one owner. Do not use for static Railcode apps, in-app LLM tool loops (llm.generate({ tools }) — see create-railcode-app), or general organization administration.
-version: 0.1.23
+version: 0.1.24
 ---
 
 # Create Railcode Agent
@@ -105,12 +105,14 @@ plus its agent manifests**, which is the shape most agent work takes.
 
 | Example | What it is | Showcases |
 | --- | --- | --- |
-| [`agents/pitch-deck`](https://github.com/Railcode-HQ/railcode-examples/tree/main/agents/pitch-deck) | An app for uploading company materials, paired with an agent that writes a polished pitch-deck PDF from them. | App-paired managed agents: `app_data`/`app_files` access, code execution, publishing runs back as tracked versions. |
-| [`agents/proposals`](https://github.com/Railcode-HQ/railcode-examples/tree/main/agents/proposals) | An app that imports Granola client meetings, paired with an agent that drafts editable `.docx` proposals from a meeting plus stored materials. | Personal connectors (Granola), cron-triggered agent runs, connector calls made directly from the app without an agent. |
+| [`agents/pitch-deck`](https://github.com/Railcode-HQ/railcode-examples/tree/main/agents/pitch-deck) | An app for uploading company materials, paired with an agent that writes a polished pitch-deck PDF from them. | App-paired managed agents: `app_data`/`app_files` access, code execution, and a run started with `agents.start()` from the app's worker because a worker cannot hold one open. |
+| [`agents/proposals`](https://github.com/Railcode-HQ/railcode-examples/tree/main/agents/proposals) | An agent that watches Granola meetings on a cron and drafts an editable `.docx` proposal, paired with an app that displays them. | Personal connectors (Granola), an agent-owned cron schedule, and why that schedule cannot live on the app: a cron invocation has no caller, so `agents.start()` from cron is a 409. |
 
 They pair an app with a managed agent because agents can't own files or storage directly — they
-work through an app they have data access to. The repo's `apps/` directory holds plain-app
-examples (kanban, data chat, CRM); reach for those through `$create-railcode-app`.
+work through an app they have data access to. Both companion apps are **apps v2** (a static
+`frontend/` plus a `server/index.ts` worker), so the agent is started from the app's worker, not
+from the page. The repo's `apps/` directory holds plain-app examples (kanban, data chat, CRM);
+reach for those through `$create-railcode-app`.
 
 **Ask, don't assume.** When the request substantially overlaps an example, put the choice in the
 step 1 scoping batch, naming the example in the user's own terms:
@@ -445,8 +447,8 @@ scope, which on a migrated app is frozen and read-only from the worker.
 Name the app after the agent (e.g. agent `report-extractor`, app
 `report-extractor-console`), declare the narrowest slugs on both sides, and build the app
 with `$create-railcode-app`. The `agents/` rows in [Start From An Example](#start-from-an-example)
-are working versions of exactly this pairing — but note they are **generation-1** apps, so read
-them for the agent side and build the app half as apps v2.
+are working apps-v2 versions of exactly this pairing, agent manifest and worker both — copy one
+when it covers what the user is asking for.
 
 ## Hard Limits
 

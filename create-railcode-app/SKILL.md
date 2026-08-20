@@ -1,7 +1,7 @@
 ---
 name: create-railcode-app
 description: Build, modify, debug, test, and deploy Railcode apps end-to-end. Use when creating a Railcode app from an idea, scaffolding with the Railcode CLI, writing a backend worker with @railcode/sdk, wiring a frontend to worker routes, declaring app authority, testing with railcode dev, migrating a legacy v1 app to apps v2, maintaining an existing v1 browser-SDK app, or deploying. Do not use for managed-agent authoring or general organization administration.
-version: 0.2.0
+version: 0.2.1
 ---
 
 # Create Railcode App
@@ -93,19 +93,32 @@ its result back.
 
 ## Start From An Example
 
-`railcode-examples` (`apps/kanban`, `apps/chat`, `apps/crm`) is currently **generation 1 only** —
-every one of them loads `/_api/sdk.js`.
+`railcode init` is the starting point for a new app: each worker template scaffolds a working
+platform tour (identity, a todo list on `db`, files, and the read-only org surfaces) you can read
+and then delete.
 
-**Do not copy one into a new app.** A new app is generation 2, the browser SDK will not exist,
-and the copy cannot work. Read them for product patterns — data modeling, table/list UI, routing,
-empty states — and then build the v2 shape yourself.
+For anything past the tour, read `railcode-examples`. Every app there is **generation 2** —
+`frontend/` + `server/index.ts`, the shape you are building — so it is safe to copy from, and
+each was chosen to carry one lesson:
 
-To study one file without copying anything, fetch it raw from
-`https://raw.githubusercontent.com/Railcode-HQ/railcode-examples/main/<path>`.
+| Example | Read it for |
+| --- | --- |
+| `apps/kanban` | The plainest worker app. A shared store, and one asymmetric rule (delete is the author or an admin) written where a caller cannot reach it. |
+| `apps/chat` | The agent loop running in the worker and streaming ndjson to the page; **per-user isolation rebuilt as keys plus an owner check** (`server/keys.ts`); batched file URLs with a fallback for non-S3 storage. |
+| `apps/crm` | A large v1 app ported through ONE module, and the tool loop that had to stay in the browser because its writes wait for a human approval click. |
+| `agents/pitch-deck` | `agents.start()` + poll, a run that reattaches after a refresh, and agent output landing in the app's own store with no bridge. |
+| `agents/proposals` | Why a schedule belongs to the AGENT, not the app: cron has no caller, so `agents.start()` from cron is a 409. |
 
-The `railcode init` templates are the v2 starting point, and each worker template scaffolds a
-working platform tour (identity, a todo list on `db`, files, and the read-only org surfaces) you
-can read and then delete.
+Copy a whole example as a starting point:
+
+```bash
+mkdir my-app && curl -fsSL \
+  https://github.com/Railcode-HQ/railcode-examples/archive/refs/heads/main.tar.gz \
+  | tar -xz --strip-components=3 -C my-app railcode-examples-main/apps/kanban
+```
+
+Then set `app` in `railcode.json` to your slug. To study one file without copying, fetch it raw
+from `https://raw.githubusercontent.com/Railcode-HQ/railcode-examples/main/<path>`.
 
 ## Build Process (follow in order)
 

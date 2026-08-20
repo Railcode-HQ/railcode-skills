@@ -160,10 +160,13 @@ pure, dependency-injected generator that takes a `wire` with `generate`/`stream`
 3. Tools (`run`, with approval and store access) execute in the page exactly as before; only each
    planning **turn** crosses to the worker.
 
-**Drive it through `generate`, not `stream`.** `llm.stream({ tools })` throws in the worker SDK
-(`streamRaw() does not run tool loops`). Step events, approval, transcript threading, and stop
-reasons all still work through `generate`; the only loss is token-by-token streaming of the final
-answer, which arrives whole.
+**Relay each turn with the tool DEFINITIONS attached.** The worker route calls `llm.stream()` (or
+`generate`) with the run-less defs the browser sent and passes the events back; the browser's loop
+executes the `run` handlers and threads the next turn. Step events, approval, transcript threading
+and stop reasons all keep working, and text still streams live.
+
+Needs `@railcode/sdk` ≥ 0.3.0. Earlier builds refused any call carrying tools on the streaming
+path, which forced the relay onto `generate` and cost the token-by-token final answer.
 
 ## Stack taxes (only if you pick TanStack)
 
