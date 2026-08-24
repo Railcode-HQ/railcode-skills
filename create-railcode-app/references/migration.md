@@ -10,6 +10,12 @@ different risks and only one of them is irreversible.
 
 You often want both. You do not always want them on the same app.
 
+You are usually here for one of two reasons: the user asked for a v1 app to become v2, or a v1
+app was asked for something it cannot do — a secret, a signed outbound call, a cron, a rule that
+must hold — and [SKILL.md](../SKILL.md#when-a-v1-app-cant-do-whats-asked) sent you. In the
+second case the migration is the deliverable, not an option to float: tell the user in a
+paragraph, then build. The feature that triggered it becomes the first worker route.
+
 ## Decide the path first
 
 **Path A — a new app slug (strongly preferred).**

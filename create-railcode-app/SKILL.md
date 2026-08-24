@@ -1,7 +1,7 @@
 ---
 name: create-railcode-app
-description: Build, modify, debug, test, and deploy Railcode apps end-to-end. Use when creating a Railcode app from an idea, scaffolding with the Railcode CLI, writing a backend worker with @railcode/sdk, wiring a frontend to worker routes, declaring app authority, testing with railcode dev, migrating a legacy v1 app to apps v2, maintaining an existing v1 browser-SDK app, or deploying. Do not use for managed-agent authoring or general organization administration.
-version: 0.2.3
+description: Build, modify, debug, test, and deploy Railcode apps end-to-end. Use when creating a Railcode app from an idea, scaffolding with the Railcode CLI, writing a backend worker with @railcode/sdk, wiring a frontend to worker routes, declaring app authority, testing with railcode dev, migrating a legacy v1 app to apps v2, maintaining an existing v1 browser-SDK app, adding to a v1 app something it cannot do (a secret, a backend, a cron, authorization that must hold), or deploying. Do not use for managed-agent authoring or general organization administration.
+version: 0.2.4
 ---
 
 # Create Railcode App
@@ -52,10 +52,52 @@ The plain text output does **not** print the generation; use `--json`.
 | Building a new app | **Apps v2.** Continue with this file. |
 | Changing an app whose `railcode.json` has a `"type"` and a `"server"` | **Apps v2.** Continue with this file. |
 | Changing an app whose `index.html` loads `/_api/sdk.js` | **Generation 1.** Read [v1 legacy](references/v1-legacy.md) — the rules here mostly do not apply. |
+| Changing a v1 app, and the request needs something v1 cannot do — a secret, a backend, a cron, authorization that must hold | **Migrate, and tell the user.** Read [When a v1 App Can't Do What's Asked](#when-a-v1-app-cant-do-whats-asked) next. Do not build a browser-side workaround. |
 | User wants a v1 app rebuilt as v2 | Read [Migration](references/migration.md) **first**. It is one-way and has a downtime window. |
 
 If you cannot reach the server to check, decide from the source tree: `/_api/sdk.js` in
 `index.html` means v1; a `"server"` key in `railcode.json` means v2.
+
+## When a v1 App Can't Do What's Asked
+
+A v1 app is a page and a browser SDK. There is no worker, so there are no secrets, no cron, no
+server-side code, and no caller the app can trust. When a request needs one of those, the
+platform's answer is "that needs a worker" — and a v1 app cannot get a worker without migrating.
+"Add X to this app" hides a migration whenever X lands on a row below.
+
+| The request needs… | Why v1 can't | On v2 |
+|---|---|---|
+| A credential the browser must not see — an AWS key, a signing key, a third-party API secret | No secrets. Anything the page can read — KV, a settings collection, a bundled constant — every user who can open the app can read | `secrets.NAME` in the worker |
+| An API the connector proxy can't authenticate to — per-request signing (SigV4), mTLS, a bespoke handshake | Connectors do bearer/header/query/basic only, and there is nowhere server-side to run signing code | The worker calls it under `egress:` |
+| Something to run on a schedule | No cron; nothing runs unless a page is open | A `crons:` entry hitting a worker route — or the agent's own schedule for AI work |
+| A rule that must hold — "X submits, Y approves, X can't approve their own" | Page-side checks are advisory; any user can bypass them from devtools | A check in the worker against `ctx.user` |
+| Server-side work — aggregating many records, chaining several services, anything too heavy or too sensitive for a tab | Nothing runs server-side | A worker route |
+
+**The rule: migrate, tell the user, and keep going.** When the request lands on a row, the
+deliverable is the migration plus the feature — not a v1 approximation of the feature.
+
+- **Do not build the workaround.** A key parked in KV so the page can sign requests itself, a
+  poll loop standing in for a schedule, an approval check in a tab — each one ships, demos, and is
+  the wrong design, and the user finds out afterward if at all. If you catch yourself writing
+  "the key is readable by anyone who can use the app", you are building the workaround.
+- **Say it up front, in one paragraph, then proceed.** What the request needs, that v1 has no
+  way to provide it, that the app is going to v2 to get it, and which path: a new slug (Path A —
+  reversible, preferred) or in place (Path B — one-way, with a downtime window). Do not stop the
+  work to ask whether to migrate, and do not present migration as an alternative once the
+  workaround is already built.
+- **Size it honestly — it is smaller than it looks.** v2 has no browser SDK, so every data call
+  the page makes moves behind the worker. But that is a rewrite of the app's one SDK wrapper into
+  `fetch()` calls to worker routes, not a rewrite of the app: views, state, and business logic
+  stay. The feature you were asked for becomes the first new route. `apps/crm` in
+  `railcode-examples` is a large v1 app ported through exactly one module.
+- **The one thing to hold for is the gate.** On Path B, `railcode migrate` is irreversible and
+  the live app is down until the next deploy, so finish and validate the v2 build first and get an
+  explicit go before running it. Path A never touches the gate.
+
+Read [Migration](references/migration.md) for the procedure. If the user hears all of this and
+still wants the v1 version, build it and say plainly what it compromises. Small changes that stay
+inside what v1 already does — a new view, a fix, a field — need none of this; make them in place
+per [v1 legacy](references/v1-legacy.md).
 
 ## The v2 Model In One Paragraph
 
@@ -267,7 +309,8 @@ Load only the reference the task needs:
 - [CLI workflow](references/cli-workflow.md) — exact commands: init/dev/deploy/secrets/logs/
   migrate, manifest authority, app access.
 - [Deployment](references/deployment.md) — deploy resolution, access modes, verification.
-- [Migration](references/migration.md) — turning an existing v1 app into a v2 app.
+- [Migration](references/migration.md) — turning an existing v1 app into a v2 app, including
+  when a v1 app is asked for something it can't do.
 - [v1 legacy](references/v1-legacy.md) — the browser-SDK platform, **for maintaining existing
   generation-1 apps only**. Never build anything new from it.
 

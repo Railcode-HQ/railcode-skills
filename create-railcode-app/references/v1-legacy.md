@@ -31,10 +31,15 @@ Generation 1 apps keep running, and you can keep changing them indefinitely:
 
 ## Keeping a v1 app healthy
 
-Prefer small, in-place changes. When someone asks for a substantial new capability — a backend,
-a scheduled job, per-app secrets, real server-side authorization — that is the signal to discuss
-migrating rather than to stretch the browser SDK further. Say so explicitly, with the one-way
-caveat, and let the user decide.
+Prefer small, in-place changes. When someone asks for something v1 cannot provide — a secret the
+browser must not see, a call the connector proxy can't authenticate, a scheduled job, a backend,
+authorization that must actually hold — that is the signal to **migrate**, not to stretch the
+browser SDK further. Tell the user why and proceed with the migration; do not build a
+browser-side stand-in and offer v2 as an afterthought. In particular, never park a credential in
+KV, a settings collection, or the page so the browser can call something itself: every user who
+can open the app can read it. The signals and the rule are in
+[SKILL.md](../SKILL.md#when-a-v1-app-cant-do-whats-asked); the procedure is in
+[migration.md](migration.md).
 
 Check which generation you are actually holding before you touch anything:
 
