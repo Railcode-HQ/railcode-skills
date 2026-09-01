@@ -136,7 +136,7 @@ export function collection(name: string) {
 | `files.*` | `POST /api/rc/files` → worker `files`; use `files.urls()` for galleries |
 | `query()` / `data().runSQL()` | `POST /api/rc/query` → worker `query` / `data` |
 | `connector().fetch()` | `POST /api/rc/connector` → worker `connector` |
-| `personalConnections.*` | `POST /api/rc/pc` → worker `personalConnections` |
+| `personalConnections.*` | **Removed.** The account is now a connector row: `POST /api/rc/connector` → worker `connector(name)`. Get the row's name from `railcode connector list` — it may be suffixed (`gmail-jp`) |
 | `llm.generate` | `POST /api/rc/llm` → worker `llm` |
 | `agents.invoke` / `start` | `POST /api/rc/agent` → worker `agents.start` + a poll route |
 | `roles()` | **No worker equivalent.** `ctx.user.roles` gives the caller's own roles only |

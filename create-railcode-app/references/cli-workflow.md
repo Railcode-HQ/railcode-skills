@@ -11,7 +11,7 @@
 - Validate the app authority manifest
 
 Use this reference for exact Railcode CLI behavior relevant to building, testing, and
-deploying an app on the **multi-tenant** Railcode platform. Written against **CLI 0.2.2**. For managed agents use
+deploying an app on the **multi-tenant** Railcode platform. Written against **CLI 0.3.0**. For managed agents use
 `$create-railcode-agent`; for organization administration use `$manage-railcode-org`.
 
 The CLI ships as the npm package **`railcode`**. The app-building subset is:
@@ -28,11 +28,12 @@ railcode logs app [<invocation_id>] [--app <slug>] [--follow]   Worker invocatio
 railcode migrate [--app <slug>] [--yes]       Move a v1 app to apps v2 (ONE-WAY)
 railcode manifest <validate|show> ...         Validate manifest.yaml / show the ratified authority
 railcode design-system [get|set] ...          Print the org's design-system guidance
-railcode db <list|query> ...                  List data connectors / run ad-hoc SQL
-railcode query <list|run> ...                 List/invoke saved queries by name
-railcode connector <list|docs|fetch> ...      Inspect/call service connectors
-railcode personal-connectors <list|tools|connect|call> ...   Your own connected accounts
-railcode llm <providers|models>               List the LLM providers/models apps can call
+railcode db <list|query> ...                  List data connectors / run read-only SQL
+railcode query <list|run|create|update|delete> ...  Invoke saved queries by name / author (admin)
+railcode connector <list|catalog|link|add-mcp|tools|call|docs|fetch|access|share|...> ...
+                                              Link your own accounts or custom APIs/MCP servers,
+                                              call them, share them; admins manage every row
+railcode llm <providers|models|default>       List models, or set the org default
 railcode app kv <collections|list|get|set|delete|drop> ...   Read/write the deployed app's KV (owner)
 railcode app files <list|download|upload|delete> ...   Read/write the deployed app's files (owner)
 railcode apps show <app> [--json]             App details, incl. your rights and its generation
@@ -189,7 +190,7 @@ What is local vs forwarded:
 | Surface | Under `railcode dev` |
 |---|---|
 | `db`, `files` | **Local scratch store** on disk. Flat scope. `--reset` seeds fresh. Never touches live data |
-| SQL, saved queries, LLM, email, service connectors, personal connectors, **agents** | **Forwarded to the real instance** under a CLI-minted dev token carrying your identity |
+| SQL, saved queries, LLM, email, connectors, **agents** | **Forwarded to the real instance** under a CLI-minted dev token carrying your identity |
 | `secrets` | Read from your local environment |
 | Cron | Not scheduled — trigger the route by hand (remember: **POST**) |
 
@@ -386,39 +387,36 @@ required**.
   exclusive), `--json` prints the raw `{ status, ok, headers, body, truncated }` envelope. A
   non-2xx upstream status is still printed, but the command exits non-zero.
 
-## Call Personal Connectors
+## Link A Connector You Own
+
+**`railcode personal-connectors` (and its `pc` alias) was removed in CLI 0.3.0** — it exits
+"Unknown command". Personal connectors were folded into `railcode connector`: one command for a
+shared team credential and for an account you link yourself.
 
 ```bash
-railcode personal-connectors list                                    # toolkits this deployment brokers + your status
-railcode personal-connectors tools gmail                             # gmail's callable tools + input schemas
-railcode personal-connectors connect gmail                           # print an OAuth URL to open in a browser
-railcode personal-connectors call gmail send_email --args '{"recipient_email":"a@b.com","subject":"hi","body":"hi"}'
+railcode connector catalog                     # providers you can link + their connect methods
+railcode connector link gmail                  # link your own account; you own the row
+railcode connector add-mcp notion https://mcp.notion.com/mcp   # any remote MCP server
+railcode connector list                        # what you can see: owned, shared, org-mode
+railcode connector tools gmail-jp              # callable tools + input schemas
+railcode connector call gmail-jp send_email --args '{"to":"a@b.com","subject":"hi"}'
 ```
 
-`railcode personal-connectors` (aliases `personal-connector`, `pc`) manages **your own**
-connected third-party accounts (Gmail, Slack, ...) — distinct from an
-org's admin-configured **service connectors** (`railcode connector`) and from an app's
-`personal_connectors:` manifest declaration below. It hits the **non-org-scoped**
-`/api/personal-connections/*` plane: a personal connection belongs to the human who ran
-`railcode login`, not the org, so these commands work straight after login with no app
-required.
-
-- `list` — toolkits this deployment brokers and whether **you** have connected each one.
-  A `503` here means the deployment itself has personal connectors turned off
-  (`PERSONAL_CONNECTORS_ENABLED` is an instance-level setting, not something an org
-  configures).
-- `tools <toolkit>` — that toolkit's full callable-tool catalog with input schemas, so you
-  know what to write into an app's `personal_connectors:` and what
-  `personalConnections.call(toolkit, tool, args)` expects. In-house tool slugs are lowercase
-  and case-sensitive; copy the returned slug exactly.
-- `connect <toolkit>` — prints the provider's OAuth URL; open it in a browser yourself (the
-  CLI doesn't open it for you).
-- `call <toolkit> <tool> [--args '<json>']` — runs one tool **as you**, against your own
-  connected account. This is an identity op like `list`/`connect` — there is no app manifest
-  bound on this CLI surface, since you're calling your own account with your own login, the
-  same thing you could do by hand. (The app-plane equivalent, `personalConnections.call()` in
-  the SDK, **is** bound by the calling app's ratified manifest — see
-  [App Manifest](#app-manifest-authority) below.)
+- **You own what you link, and it starts `restricted`** — visible to you, admins, and anyone you
+  `share` it with. `railcode connector access <name> organization` opens it to the org;
+  `railcode connector share <name> --user <email>` or `--role <name>` grants it narrowly.
+- **The name is not the provider id.** Two people linking the same provider, or a name already
+  taken, produces a suffix (`gmail-jp`, `slack-harshsharma`). Always read the name from
+  `connector list` before writing it into a manifest.
+- `link` waits for the OAuth round trip by default; `--no-wait` prints the URL and returns.
+  `relink <name>` re-authorizes an expired row without disturbing what names it.
+- `call` runs a tool **as you, under your grants** — an identity op with no app manifest bound,
+  the same thing you could do by hand. The app-plane equivalent, `connector(name).call()` in the
+  SDK, **is** bound by the calling app's ratified manifest — see
+  [App Manifest](#app-manifest-authority) below.
+- Two kinds behave differently: **http** rows are a method/path proxy (`connector fetch`), **mcp**
+  rows are tools called by name (`connector tools` / `call`). Linked providers such as Gmail
+  expose tools as well.
 
 ## LLM Gateway
 
@@ -830,10 +828,9 @@ adhoc_sql: [analytics]      # only when the user explicitly requested direct/ad-
 agents: [sales-digest]      # managed agents this app may start (agents.start/invoke).
                             # MISSING = REFUSAL, not pass-through — an undeclared agent 403s
                             # even for a caller who could invoke it from the dashboard.
-personal_connectors:        # which of the CALLER'S OWN connected accounts + tools this
-  - gmail:send_email        # app may call via personalConnections.call() — a toolkit list,
-  - slack                   # not a boolean; "gmail" (whole toolkit) or "gmail:*" both work,
-                             # but name the narrowest tool the app actually needs
+                            # (personal_connectors: was REMOVED in CLI 0.3.0 — an account
+                            # someone linked is just a connector row, declared under
+                            # connectors: above by its name, e.g. "gmail-jp": [send_email])
 ```
 
 Commands:
@@ -868,9 +865,9 @@ railcode manifest show <app>        # the app's ratified doc (by slug); --json f
   current doc and its content hash.
 - `adhoc_sql` grants raw SQL authority and is intentionally scarce. Do not add it unless the
   user explicitly requested direct/ad-hoc SQL; otherwise use `saved_queries`.
-- `personal_connectors` is unlike every other key above: it does **not** ratify against the
-  *deployer's* grants, because there is no shared resource to ratify — it bounds which of
-  **each individual caller's own** connected accounts the app may touch, and how much.
-  Declaring `gmail:send_email` never lets the app read anyone's inbox, even though a
-  caller could do that themselves; an undeclared toolkit/tool is a `403` for every caller, no
-  matter who deployed the app or what they personally hold.
+- `connectors` covers accounts someone linked personally as well as shared org credentials —
+  since CLI 0.3.0 they are the same kind of row, told apart by the row's `owner` and
+  `access_mode`, not by a separate manifest key. It ratifies like every other key: the
+  deployer must be able to reach the row (own it, be an admin, or have it shared with them).
+  Declaring `gmail-jp: [send_email]` never lets the app read that inbox; an undeclared row or
+  tool is a `403` no matter who deployed the app.

@@ -128,13 +128,14 @@ const svc  = await serviceConnectors();           // [{ name, description, auth_
 
 const out  = await llm.generate("Summarize this record.", { metadata: { feature: "summary" } });
 
-const gmailTools = await personalConnections.tools("gmail");       // this app's declared subset
-const sent = await personalConnections.call("gmail", "send_email", { recipient_email, subject, body });
+const gmailTools = await connector("gmail-jp").tools();            // this app's declared subset
+const sent = await connector("gmail-jp").call("send_email", { recipient_email, subject, body });
 ```
 
 The globals are exactly: `me`, `appUsers`, `roles`, `designSystem`, `db`, `files`, `data`, `postgres`,
 `bigquery`, `turso`, `dataConnectors`, `query`, `savedQueries`, `connector`,
-`serviceConnectors`, `llm`, `llmProviders`, `email`, `agents`, `personalConnections`. Notes:
+`serviceConnectors`, `llm`, `llmProviders`, `email`, `agents`. (`personalConnections` still
+exists as a **thrower** — see Personal Connectors below.) Notes:
 
 - `me()` returns nested objects. Use **`me().user.uuid`** for stable ownership checks, not to
   simulate storage scoping; use `db.user` / `files.user` for private data.
@@ -348,58 +349,58 @@ if (resp.ok) {
 `allowed_methods` (405) and strips upstream auth/`Set-Cookie` headers; the response is
 truncated at a size limit (`resp.truncated`).
 
-## Personal Connectors
+## Personal Connectors — REMOVED
 
-A **personal connector** is the caller's **own** connected
-third-party account (Gmail, Slack, ...) — the opposite ownership axis
-from a service connector. A service connector is one credential the *org* configures and
-every allowed caller shares; a personal connector is one connection each *individual* signs
-in and links themselves, and only they can drive it.
+**Personal connectors no longer exist.** As of CLI 0.3.0 / `@railcode/sdk` 0.4.0 they were folded
+into ordinary connectors: an account someone links is an org row with an `owner` and an
+`access_mode`, reached through the same `connector()` global a shared credential uses.
 
-```js
-const connections = await personalConnections.list();              // your status per declared toolkit
-const { redirect_url } = await personalConnections.connect("gmail"); // open in a POPUP, not a redirect
-const tools = await personalConnections.tools("gmail");             // this app's declared subset only
-const { result } = await personalConnections.call("gmail", "send_email", {
-  recipient_email: "user@example.com", subject: "Hi", body: "...",
-});
+`personalConnections` is **still bound on `window`**, deliberately — a v1 bundle's call sites are
+frozen and deleting the object would turn each one into `undefined is not a function`, thrown in
+the browser before any request left it. Instead every method still issues its old request and the
+platform answers **410**, so the developer gets an explanation and the platform gets a log line
+naming the app that is still calling.
+
+The 410 body carries what you need:
+
+```json
+{
+  "error": "personal_connectors_removed",
+  "message": "Your \"gmail\" is now the connector \"gmail-jp\", which you own.",
+  "your_connectors": [ { "name": "gmail-jp", "provider": "gmail", "kind": "http", "tools": true } ],
+  "replacement": "connector('gmail-jp').call('send_email', { ... })",
+  "note": "This is a generation-1 app. connector(name) is already in the platform SDK it loads
+           from /_api/sdk.js, so no migration to apps v2 is required — but the call site is in
+           your bundle, so the app must be rebuilt and redeployed."
+}
 ```
 
-Two different kinds of operation live on this one global, and the difference is load-bearing:
+**Fixing a v1 app does not mean migrating it to apps v2.** `connector()` is already in the SDK
+served from `/_api/sdk.js`. Swap the call and redeploy:
 
-- **`list()` and `connect(toolkit)` are identity ops.** Linking your own account authorizes
-  itself — there's no manifest check on them beyond the app only being able to offer toolkits
-  it declares (so it can't walk a caller through connecting an account it could never use).
-  `connect()` returns `{ redirect_url }`, the provider's OAuth URL. Open it in a **popup**, not
-  a full-page redirect — a redirect would blow away whatever the user was doing in the app,
-  and JavaScript cannot observe a cross-origin popup closing, so poll `list()` while it's open
-  and close it once the toolkit reports connected.
-- **`call()` is not an identity op.** Which app may drive an already-connected account, and
-  how much of it, comes from **this app's ratified `personal_connectors:` manifest** — not
-  from what the caller could do themselves. An app declaring `gmail:send_email` can send
-  mail as the caller and cannot read their inbox, even though the caller personally could do
-  both. `tools(toolkit)` returns only the app's declared subset (its schema is what `call()`
-  expects). An undeclared toolkit/tool is a `403` **every time**; an app with no ratified
-  `personal_connectors:` manifest can call nothing at all. `call()` is `404` if the tool isn't
-  part of that toolkit, and `409` if the caller hasn't connected that toolkit yet — render the
-  `409` as a "Connect your account" prompt, not an error state. In-house tool slugs are
-  lowercase and case-sensitive; use the exact value returned by `tools(toolkit)`.
-- **Custom MCP servers.** Beyond the bundled registry, a user can connect
-  **any remote MCP server by pasting its URL** on the personal-connectors surface
-  (https-only and SSRF-guarded; auth: `none`, a pasted bearer `token`, or `oauth` via
-  discovery + dynamic client registration). The connection appears in `list()` as a
-  toolkit id `custom_<slug>` marked `custom: true` (with `display_name`/`url`), and an app
-  may declare and `call()` it on the owner's behalf like any bundled toolkit.
-  Disconnecting a custom connector **deletes** it — the connection row is the definition.
-  Custom connectors are **not** declarable in managed-agent manifests: agent ratification
-  checks connector ids against the static registry, which a `custom_*` id never matches.
+```js
+const tools = await connector("gmail-jp").tools();
+const sent  = await connector("gmail-jp").call("send_email", { recipient_email, subject, body });
+const mine  = await serviceConnectors();     // replaces personalConnections.list()
+```
 
-This is distinct from an admin-configured **service connector** (`connector()` /
-`serviceConnectors()`, above): a service connector is one org-wide credential every allowed
-caller shares; a personal connector is each individual's own account, gated per-app by what
-that app declares. It's also distinct from a managed agent's `tools.personal_connectors` —
-that variant runs against the *agent's owner's* connection (see `$create-railcode-agent`),
-not the calling app's viewer.
+Three things to know while doing it:
+
+- **The name may not be the old toolkit id.** Where two people in one org held the same provider,
+  or the plain name was taken, the row was suffixed — `gmail-jp`, `slack-harshsharma`. The 410
+  body names the replacement; `railcode connector list` is the authority.
+- **`connect()` has no replacement, by design.** Linking left the app entirely: the person runs
+  `railcode connector link gmail` or links from the dashboard. Delete the popup-and-poll flow;
+  do not rebuild it.
+- **`personal_connectors:` in the manifest is a deploy error now.** Replace it with `connectors:`
+  naming the row and its tools — `connectors: { "gmail-jp": ["send_email"] }`. The authority
+  model is unchanged in spirit: an undeclared row or tool is a `403`, and declaring
+  `["send_email"]` still cannot read the inbox.
+- **Custom MCP servers** work the same way, via `railcode connector add-mcp <name> <https-url>`.
+  They keep their `custom_<slug>` name and, unlike before, **can** be declared by managed agents.
+
+An already-deployed v1 app keeps serving throughout: authorization reads the projected grant rows
+rather than the manifest document, so only `personalConnections` calls and re-deploys are refused.
 
 `railcode dev` reproduces this exact gate locally against your app's `manifest.yaml` — see
 [cli-workflow.md](cli-workflow.md#local-dev).
@@ -593,15 +594,14 @@ const res = await email.send({
   saved token — real provider, quota, databases, connectors, and **mail delivery** (real
   spend + data — `email.send()` sends actual email).
 - Not logged in: `dataConnectors()`/`serviceConnectors()`/`savedQueries()` return empty and
-  `data().runSQL()`/`query()`/`llm`/`email.send()`/`personalConnections.*` return `503`
+  `data().runSQL()`/`query()`/`llm`/`email.send()`/`connector().*` return `503`
   (never `401`). The startup banner says which mode you're in, so you don't have to fire a
   request to find out.
-- `personalConnections.*` also forwards to the real instance when logged in, as **you**, the
+- `connector().*` also forwards to the real instance when logged in, as **you**, the
   signed-in developer — but it's the one proxy here that is **not** simply bound by your own
-  grants. The dev server reads your app's local `manifest.yaml` `personal_connectors:` and
-  reproduces the same app-plane gate production enforces: an undeclared toolkit/tool `403`s
-  locally too, before the request ever reaches your real connected account.
+  grants. The dev server reads your app's local `manifest.yaml` `connectors:` and reproduces
+  the same app-plane gate production enforces: an undeclared row or tool `403`s locally too,
+  before the request ever reaches the real account.
 
 This lets agents build most app behavior without a live server, then layer on
-production-backed SQL/LLM/connectors/email/personal-connectors once credentials and access
-are available.
+production-backed SQL/LLM/connectors/email once credentials and access are available.

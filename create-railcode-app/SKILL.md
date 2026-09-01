@@ -1,7 +1,7 @@
 ---
 name: create-railcode-app
 description: Build, modify, debug, test, and deploy Railcode apps end-to-end. Use when creating a Railcode app from an idea, scaffolding with the Railcode CLI, writing a backend worker with @railcode/sdk, wiring a frontend to worker routes, declaring app authority, testing with railcode dev, migrating a legacy v1 app to apps v2, maintaining an existing v1 browser-SDK app, adding to a v1 app something it cannot do (a secret, a backend, a cron, authorization that must hold), or deploying. Do not use for managed-agent authoring or general organization administration.
-version: 0.2.4
+version: 0.3.0
 ---
 
 # Create Railcode App
@@ -19,17 +19,73 @@ npm view railcode version
 ```
 
 If the skill changes, re-read this file from the top. If npm is unreachable, say so and do not
-claim the guidance is current. This version was written against **CLI 0.2.3** and
-**`@railcode/sdk` 0.3.0**.
+claim the guidance is current. This version was written against **CLI 0.3.0** and
+**`@railcode/sdk` 0.4.0** (both confirmed published).
 
-**Upgrade past 0.2.2.** In 0.2.2 the `secrets` and `migrate` commands exist in the binary but are
-never dispatched, so `railcode secrets ls` and `railcode migrate` die with an unknown-command
-error no matter how correct the invocation. 0.2.3 wires them up. If either command is unknown to
-your CLI, you are on 0.2.2 — reinstall, do not go hunting for the right syntax.
+**0.3.0 is the floor this document assumes.** It is where personal connectors were folded into
+`railcode connector` (see [Breaking Changes](#breaking-changes)). On an older binary the
+`connector link` / `add-mcp` / `share` subcommands do not exist, and `railcode
+personal-connectors` still does — if you see that command work, you are on a CLI this guidance
+does not describe. Reinstall before following anything below.
+
+Two older floors still worth recognising: `secrets` and `migrate` exist but are never
+dispatched on **0.2.2** (they die with an unknown-command error however correct the
+invocation — 0.2.3 wires them up).
 
 Since 0.1.28 the CLI self-updates within its major version — but only on an **interactive
 terminal**, and agent-driven sessions are non-interactive, so keep running the explicit
 `npm install -g railcode@latest` above rather than assuming you're on the latest.
+
+## Breaking Changes
+
+A running log of platform changes that break apps or agents already in the wild, newest
+first. **When a user reports that something which used to work now fails, read this before
+debugging** — the platform's own error messages are written to be the fix instructions, and
+the entry below tells you how to act on them. Add an entry here whenever a change ships that
+an existing app cannot survive untouched.
+
+### Personal connectors are gone — CLI 0.3.0, `@railcode/sdk` 0.4.0
+
+`personalConnections` and the `personal_connectors:` manifest key were **removed**. There is
+now one kind of connector: an **org resource with an owner and an access mode**, declared
+under `connectors:` — whether it holds a shared team credential or one person's own account.
+An owned row is `restricted` (owner, admins, and whoever it is shared with) until shared.
+
+**How it shows up**
+
+- A v1 app or v2 worker calling `personalConnections.*` gets **HTTP 410**, not a 404. The body
+  names the connector that replaced the toolkit, lists the connectors the caller owns, and
+  carries a copy-pasteable replacement call. Read the body — it is the answer.
+- `railcode deploy` on a manifest still carrying `personal_connectors:` fails with
+  *"`personal_connectors` was removed — link the account as a connector … and name it under
+  `connectors:`"*. The app keeps serving; only the deploy is refused.
+- **Managed agents needed no work.** The platform rewrote their manifests, prompts, and grant
+  rows in place. If an agent still misbehaves, it is not this.
+
+**What to do**
+
+1. `railcode connector list` — the account is already there. Credentials were migrated; nobody
+   re-authorizes anything.
+2. **Check the name.** If two people in one org held the same provider, or the plain name was
+   already taken, the row was suffixed — `gmail` may now be `gmail-jp`. Use the name from
+   `connector list`, not the old toolkit id.
+3. Swap the calls. The surface is identical in the worker SDK and the v1 browser SDK:
+
+   | Old | New |
+   |---|---|
+   | `personalConnections.call("gmail", "send_email", args)` | `connector("gmail-jp").call("send_email", args)` |
+   | `personalConnections.tools("gmail")` | `connector("gmail-jp").tools()` |
+   | `personalConnections.list()` | `serviceConnectors()` |
+   | `personalConnections.connect("gmail")` | **No app-side equivalent.** Linking left the app: the person runs `railcode connector link gmail` or links from the dashboard. Do not build a connect flow into the app. |
+
+4. Replace `personal_connectors:` with `connectors:` in the manifest, naming the row and the
+   tools it may call — e.g. `connectors: { "gmail-jp": ["send_email"] }`, or `["*"]` for the
+   whole row. Then redeploy.
+
+**A v1 app does not need migrating to apps v2 for this.** `connector()` is already in the
+platform SDK served from `/_api/sdk.js`. What it does need is a **rebuild**, because the call
+site is compiled into its bundle — so this is only actionable by someone who still has the
+app's source.
 
 ## First: Which Generation?
 
@@ -125,7 +181,7 @@ yours to edit, ask the user to run it:
 
 > Delete every stored note about the Railcode browser SDK — `/_api/sdk.js`, the `window` globals
 > (`me`, `roles`, `appUsers`, `designSystem`, `db`, `files`, `data`, `query`, `connector`,
-> `serviceConnectors`, `llm`, `email`, `agents`, `personalConnections`, and the rest of that set),
+> `serviceConnectors`, `llm`, `email`, `agents`, and the rest of that set),
 > page-side authorization, and `run_as: user`. None of it exists in apps v2.
 
 Two rules decide whether this actually works:
@@ -143,23 +199,23 @@ remembered.
 ## Map The Request To Railcode
 
 Use this table before choosing an architecture. If the request names an external product or
-data source, always check data connections/saved queries, service connectors, **and personal
-connectors** before deciding what is available; the discovery commands are in Build step 1.
+data source, always check data connections/saved queries **and connectors** before deciding
+what is available; the discovery commands are in Build step 1.
 
 | What the user asks for | Use this Railcode feature (all called from the worker) |
 |---|---|
 | "Show company metrics/orders/customers from our database" | **Saved query** via `query()` (default); data connection + `data().runSQL()` only when explicitly requested |
-| "Let each user connect their Gmail, Slack, or another personal account" | **Personal connector** via `personalConnections`; declare only the needed `personal_connectors` |
-| "Connect my account to a product Railcode does not bundle" | **Custom MCP personal connector** by remote HTTPS URL, then call its `custom_<slug>` toolkit |
-| "Use our team's shared Stripe, CRM, or other SaaS account" | Org **service connector** via `connector().fetch()`; an admin owns the shared credential |
+| "Let someone use their own Gmail, Slack, or other account" | **Connector** they link and own (`railcode connector link gmail`), named under `connectors:`. Owned rows are `restricted` until shared — see [connectors](references/cli-workflow.md) |
+| "Connect an account for a product Railcode does not bundle" | `railcode connector add-mcp <name> <https-url>` — a remote MCP server as a connector you own |
+| "Use our team's shared Stripe, CRM, or other SaaS account" | An **org-managed connector** (`access_mode: organization`) via `connector().fetch()` or `connector().call()`; an admin owns the credential |
 | "Store app settings, drafts, approvals, or lightweight records" | `db` — one flat store; partitioning and access policy are **your worker's code** |
 | "Upload, store, download, or display files" | `files` (server-plane: your worker holds the bytes) |
 | "Read, extract, summarize, transform, or generate a file with AI" | **Managed agent** with `app_files` + sandbox, started with `agents.start()` |
 | "Summarize or classify data while the user waits" | `llm.generate()` / `llm.stream()` in the worker |
 | "Run on a schedule" | A `crons:` entry hitting one of your worker routes — **or** the agent's own schedule |
 | "Run in the background, from Slack, or after the tab closes" | **Managed agent** via `agents.start()`, results polled from the worker |
-| "Send a system-owned transactional email" | `email.send()`; a Gmail personal connector when mail must come from the user's own account |
-| "Call an arbitrary website/API" | Declare the host under `egress:`, or use a service/personal connector. The default allow-list is the data plane only |
+| "Send a system-owned transactional email" | `email.send()`; a Gmail **connector** when mail must come from a specific person's own account |
+| "Call an arbitrary website/API" | Declare the host under `egress:`, or use a connector. The default allow-list is the data plane only |
 
 **The file boundary still holds.** The worker may `put`/`get`/`list`/`delete` files, but any AI
 that must **read, understand, extract, summarize, transform, or generate** a file must be a
@@ -217,25 +273,26 @@ Railcode can't do, say so plainly first and propose the nearest supported shape.
 
 **External source discovery is mandatory.** Whenever the user asks for an app that reads,
 writes, syncs, searches, or acts on data from a named product ("X"), do not assume a new
-integration is needed. Inspect all four planes first:
+integration is needed. Inspect all three planes first:
 
 ```bash
 railcode db list                       # data connections
 railcode query list                    # admin-published saved queries
-railcode connector list                # org service connectors
-railcode personal-connectors list      # per-user toolkits + connection status
+railcode connector list                # connectors you can reach: owned, shared, org-managed
+railcode connector catalog             # providers that could be linked, if none exists yet
 ```
 
 If something plausible exists, inspect its real surface before designing around it
-(`railcode connector docs <name>`, `railcode personal-connectors tools <toolkit>`). Never invent
+(`railcode connector docs <name>` for http rows, `railcode connector tools <name>` for mcp
+rows). Never invent
 connector names, endpoints, or tool slugs. If you cannot reach the instance, ask the user what is
 configured and show them these commands; an empty local result is not proof that X is
 unsupported.
 
 If nothing suitable exists, explain the gap and offer the real next choices instead of silently
 dropping the integration: have an admin connect the database and publish a saved query; create an
-org service connector for a shared credential; connect a bundled personal toolkit; or connect X's
-remote MCP server by URL as a custom personal connector. If X has neither an API/database nor a
+org-managed connector for a shared credential; link a bundled provider as a connector; or add X's
+remote MCP server by URL (`railcode connector add-mcp`). If X has neither an API/database nor a
 remote MCP server, say Railcode cannot reach it directly and ask which supported source to use.
 
 Cover at least:
@@ -332,8 +389,7 @@ surface that fits:
 | Records, settings, drafts | `db` — one flat store; you own partitioning |
 | Files | `files.put/get/url/urls/list/delete` |
 | Database reads | `query()` / `savedQueries()` by default; `data()`/`postgres()`/`bigquery()`/`turso()` only when asked |
-| Shared third-party account | `connector('name').fetch()` |
-| Caller's own third-party account | `personalConnections` |
+| Third-party account, shared or personally owned | `connector('name').fetch()` (http) or `connector('name').call()` (mcp) — one surface for both; ownership and access mode live on the row |
 | Short, watched AI | `llm.generate()` / `llm.stream()` |
 | File AI, code execution, durable AI | `agents.start()` + a managed agent |
 | Org member directory | `appUsers()` |

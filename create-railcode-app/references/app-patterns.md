@@ -115,7 +115,7 @@ app.post("/api/charge", (c) => relay(c, () => connector("stripe").fetch("/v1/cha
 Then the frontend can act on meaning:
 
 ```ts
-if (res.status === 409) showConnectPrompt();      // personal connector not linked
+if (res.status === 409) showConnectPrompt();      // connector not linked / needs re-auth
 if (res.status === 429) showQuotaNotice();        // daily cap
 if (res.status === 403) showNotAllowed();         // undeclared authority
 ```
@@ -340,7 +340,6 @@ one fact produces every limit here.
 
 | Refused (`409`) | Why |
 |---|---|
-| `personalConnections.*` — every op (`list`, `connect`, `tools`, `call`) | "Personal" means one human's own account. With no caller there is no answer to *whose* |
 | `agents.start()` | A run is owned by `(app, caller)`. No caller, no owner |
 | `agents.get()` | The same ownership pair — a cron cannot even poll a run an **http** invocation started |
 
@@ -398,7 +397,7 @@ is exactly why this does not live on the app cron. See `agents/proposals` for th
 | A loop of `files.url()` | Burns the subrequest budget | `files.urls(names)` |
 | `llm.streamRaw({ tools })` with `run` handlers | Throws — a relay can't execute a tool | `llm.stream()`, or drop `run` and handle the calls yourself |
 | A `GET` cron route | 404s on every fire | Accept POST |
-| Cron calling `agents.start()`/`get()` or a personal connector | `409` | Give the agent its own schedule (see [Cron](#cron)) |
+| Cron calling `agents.start()`/`get()` | `409` | Give the agent its own schedule (see [Cron](#cron)). **Connectors are fine under cron** since CLI 0.3.0 — the credential belongs to the row, not the caller |
 | Swallowing `ApiError` into a 500 | The UI can't tell quota from forbidden | Relay `.status` verbatim |
 | A hand-rolled `ReadableStream` for a stream | A mid-stream failure vanishes; a hang-up keeps burning tokens | `toNdjson(source)` |
 | A code-split or CJS worker bundle | Deploys, then crashes at invocation | One self-contained ESM module |

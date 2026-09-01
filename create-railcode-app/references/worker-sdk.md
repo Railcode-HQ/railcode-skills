@@ -20,7 +20,7 @@ import { ctx, db, files, llm, agents, query, connector, email, secrets } from "@
 - [`llm`](#llm) · [`toNdjson()`](#streaming-to-your-frontend--tondjson)
 - [Managed agents](#managed-agents)
 - [Service connectors](#service-connectors)
-- [Personal connectors](#personal-connectors)
+- [Connectors someone owns personally](#connectors-someone-owns-personally)
 - [`appUsers` and `dataConnectors`](#appusers-and-dataconnectors)
 - [`email`](#email)
 - [`secrets`](#secrets)
@@ -292,30 +292,39 @@ await r.json();
 Manifest: `connectors: { stripe: ["GET /v1/charges"] }` — bound **per endpoint**, not per
 connector.
 
-## Personal connectors
+## Connectors someone owns personally
 
-The **caller's own** connected account (Gmail, Slack, a custom MCP server).
+**Removed in CLI 0.3.0 / `@railcode/sdk` 0.4.0: there is no separate "personal connector".**
+`personalConnections` and the `personal_connectors:` manifest key are gone; calling the old
+surface returns **410** with the replacement name in the body.
+
+A connector someone links for themselves is the *same object* as a shared one — an org row with
+an `owner` and an `access_mode` — so it uses the same handle:
 
 ```ts
-await personalConnections.list();                       // toolkits + connection status
-await personalConnections.tools("gmail");
-await personalConnections.call({ toolkit: "gmail", tool: "send_email", arguments: {...} });
-const { redirect_url } = await personalConnections.connect("gmail");
+await connector("gmail-jp").tools();                          // mcp: callable tools
+await connector("gmail-jp").call("send_email", { ... });      // mcp: run one
+await connector("stripe").fetch("/v1/charges");               // http: method/path proxy
+await serviceConnectors();                                    // what this app may call
 ```
 
-**Connect is a browser redirect driven from the worker.** Return `redirect_url` to your frontend,
-open it in a popup, and poll `list()` until the toolkit reports `active`. The OAuth callback lands
-on the platform API, so your app needs no callback route.
+Manifest: `connectors: { "gmail-jp": ["send_email"] }` — `["*"]` for the whole row. **A missing
+declaration is a refusal, not pass-through.** An app declaring `gmail-jp: ["send_email"]` can
+send as that account and cannot read its inbox. Undeclared → `403`.
 
-Manifest: `personal_connectors: [gmail, "slack:send_message"]`. **A missing declaration is a
-refusal, not pass-through** — nothing else stands between an app and a user's own account, so the
-declaration is the only bound. An app declaring `gmail:send_email` can send as you and cannot read
-your inbox. Undeclared → `403`; not yet connected → `409` (surface it as a "Connect your account"
-prompt).
+**Linking left the app.** There is no `connect()` and no `redirect_url` to return to a frontend:
+the person runs `railcode connector link gmail` or links from the dashboard, and the row exists
+before your app names it. Do not build a connect flow.
 
-**Does not compose with cron** (`409`): every op acts as `ctx.user`, and cron has none. For
-scheduled work on a personal account, use a **personal agent** with its own
-`railcode agent schedule` — see [app-patterns.md](app-patterns.md#cron).
+**Names are not provider ids.** The row is named by whoever linked it, and when two people in one
+org hold the same provider — or the plain name is taken — it is suffixed (`gmail-jp`,
+`gmail-sebastian`). Read the name from `railcode connector list`; never assume it equals the
+provider.
+
+**Crons now work.** This is the reversal from the old model: a personal connector acted as
+`ctx.user` and returned `409` under cron, which has no user. A connector's credential belongs to
+the **row**, so a scheduled route can call one. Access is still checked against the app's
+declaration and the row's sharing.
 
 ## `appUsers` and `dataConnectors`
 
@@ -335,8 +344,8 @@ await email.send({ to, subject, html });
 ```
 
 Send-only, platform-pinned sender, appended disclaimer. **You cannot receive email or send from a
-custom address.** When mail must come from the user's own account, use a Gmail personal connector
-instead. Manifest: `email: true`. Per-app daily cap → typed `429`.
+custom address.** When mail must come from a specific person's own account, use a Gmail
+**connector** they own instead. Manifest: `email: true`. Per-app daily cap → typed `429`.
 
 ## `secrets`
 
@@ -394,10 +403,10 @@ adhoc_sql:
 connectors:
   stripe:
     - GET /v1/charges
+  gmail-jp:
+    - send_email
 agents:
   - digest
-personal_connectors:
-  - gmail:send_email
 egress:
   - api.example.com
   - "*.internal.example.com"
@@ -415,6 +424,6 @@ railcode manifest validate        # strict local parse, before deploying
 railcode manifest show <app>      # the ratified doc + any pending diff
 ```
 
-Two keys are refusals rather than pass-through when absent — `agents` and `personal_connectors`.
+Two keys are refusals rather than pass-through when absent — `agents` and `connectors`.
 Everything else falls back to the caller's own grants when there is no manifest, which on v2 is
 moot because `run_as: app` is required.
