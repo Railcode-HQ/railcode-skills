@@ -1,7 +1,7 @@
 ---
 name: create-railcode-app
 description: Build, modify, debug, test, and deploy Railcode apps end-to-end. Use when creating a Railcode app from an idea, scaffolding with the Railcode CLI, writing a backend worker with @railcode/sdk, wiring a frontend to worker routes, declaring app authority, testing with railcode dev, migrating a legacy v1 app to apps v2, maintaining an existing v1 browser-SDK app, adding to a v1 app something it cannot do (a secret, a backend, a cron, authorization that must hold), or deploying. Do not use for managed-agent authoring or general organization administration.
-version: 0.3.0
+version: 0.3.1
 ---
 
 # Create Railcode App
@@ -409,6 +409,12 @@ implicitly any more: `db` is one flat store, so "per-user" means *you* key by `c
 navigation in an in-memory `view` variable. Deep links, hard refresh, and back/forward must work;
 these apps get linked in Slack and tickets. Railcode serving falls back to `index.html`, so
 client-side routes resolve with no config.
+
+**Describe your routes at `/api/openapi.json`.** Serve an OpenAPI document from the worker
+(keep it in `server/openapi.ts`) with `required` set on path parameters and body schemas. It is
+how an agent calling the app through the Railcode MCP learns the routes and their arguments
+instead of guessing them; without it, a wrong path and a wrong method are both a `404`. See
+[app-patterns.md](references/app-patterns.md#describe-your-routes-at-apiopenapijson).
 
 **Relay the SDK's error status.** When a worker route wraps an SDK call, catch `ApiError` and
 respond with its `.status` and body — the frontend's 403/409/429 handling depends on surviving
