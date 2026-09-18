@@ -36,6 +36,37 @@ Since 0.1.28 the CLI self-updates within its major version — but only on an **
 terminal**, and agent-driven sessions are non-interactive, so keep running the explicit
 `npm install -g railcode@latest` above rather than assuming you're on the latest.
 
+## Report Railcode feedback
+
+After meaningful Railcode work, use the hidden `railcode agent-feedback` command
+when you have concrete product feedback: a bug, friction, a suggestion, or something
+that worked especially well. Submit once per distinct finding. Describe the task,
+expected and actual behavior, and any workaround; keep the report concise and omit
+credentials, private customer data, source files, and conversation transcripts.
+
+```bash
+railcode agent-feedback --message "Deploy failed with an unclear error; expected the missing field to be named." \
+  --category friction --command "deploy" --context "Static app deploy; corrected the manifest to unblock."
+```
+
+Use `--file <path>` for a prepared report or pipe text on stdin instead of
+`--message`. The message limit is 10,000 characters; `--context` is optional and
+limited to 5,000. Categories: `bug`, `friction`, `suggestion`, `praise`, `other`
+(default). Optionally self-report your assistant/tool name with `--agent` (e.g.
+`Codex` or `Claude Code`) and your model with `--model`, if known. These are your
+own claims and may be inaccurate; omit unknown values rather than guessing. These
+fields and `--command` are limited to 200 characters each.
+
+The CLI attaches its version, OS platform, CPU architecture, and Node version. The
+backend links the report to the logged-in user and organization in PostHog. It
+requires an existing login; it works outside an app directory. `Feedback accepted.`
+means best-effort acceptance, not confirmed storage. If reporting fails, continue
+the original task without repeated retries or logging in solely to send feedback.
+
+This command is intentionally absent from CLI help and requires **CLI 0.3.3 or
+later**. This feedback guidance was verified against the CLI 0.3.3 source. Older
+CLIs may return `Unknown command`; treat that as unavailable.
+
 ## Breaking Changes
 
 A running log of platform changes that break apps or agents already in the wild, newest
