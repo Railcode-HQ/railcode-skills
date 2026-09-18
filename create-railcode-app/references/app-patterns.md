@@ -90,6 +90,66 @@ export default app;
 Everything hangs off `/api/*` (and `/_serverFn/*` on TanStack). Those are the paths the platform
 carves to your worker; anything else is served as a static file.
 
+### Describe your routes at `/api/openapi.json`
+
+Agents reach your app through the [Railcode MCP](https://github.com/Railcode-HQ/railcode/blob/main/docs/mcp.md),
+which has no idea what your routes are. If you serve an OpenAPI document at
+**`/api/openapi.json`**, `list_app_tools` lists your endpoints and what each one requires and
+`describe_app_tool` returns one endpoint's parameters and body schema. Without it an agent
+guesses, and a wrong path and a wrong method both answer `404`.
+
+Serve it from the worker, not as a static file: MCP callers may only fetch `/api/*` and
+`/_serverFn/*`, so `frontend/public/openapi.json` is unreachable. Keep the document beside the
+routes in `server/openapi.ts` and mount it:
+
+```ts
+// server/openapi.ts
+export const openapi = {
+  openapi: "3.1.0",
+  info: { title: "Notes", version: "1.0.0", description: "Team notes. Errors are {error}." },
+  paths: {
+    "/api/notes": {
+      get: { summary: "List the caller's notes, newest first" },
+      post: {
+        summary: "Create a note",
+        requestBody: {
+          required: true,
+          content: { "application/json": { schema: {
+            type: "object",
+            properties: { title: { type: "string", maxLength: 200 }, body: { type: "string" } },
+            required: ["title"],
+          } } },
+        },
+      },
+    },
+    "/api/notes/{id}": {
+      delete: {
+        summary: "Delete one note",
+        parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
+      },
+    },
+  },
+};
+
+// server/index.ts
+app.get("/api/openapi.json", (c) => c.json(openapi));
+```
+
+Rules that make it useful rather than decorative:
+
+- **Mark what is required.** `required: true` on a path parameter, and `required` on the body
+  schema — those are exactly what `list_app_tools` reports as the arguments to supply. An
+  optional body's own required fields are not reported, because they only bind once a body is sent.
+- **Write summaries for agents, not for humans browsing docs.** One line saying what the route
+  does and what it changes.
+- **Say what errors look like** in `info.description` (e.g. `{"error": "..."}` with 400/404/409),
+  so a failed call is readable.
+- **Keep it honest.** A hand-written document drifts the moment you add a route. For anything
+  past a handful of routes, generate it from the route definitions — `hono-openapi`'s
+  `describeRoute` + `validator` sits beside ordinary Hono routes and emits the same document
+  from the schemas that already validate requests.
+- **Local `$ref`s are fine** (the MCP inlines them); external `$ref`s are dropped.
+
 ### Relay platform errors verbatim
 
 Wrap SDK calls so a `403`/`409`/`429` reaches the browser as itself. Collapsing them into a `500`
