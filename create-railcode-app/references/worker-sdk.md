@@ -62,8 +62,12 @@ const notes = db.collection("notes");
 await notes.put("key", { title: "hi" });
 await notes.get("key");                    // null when absent
 await notes.delete("key");
-await notes.query().where("status", "=", "open").order("created_at", "desc").page(1, 100);
+await notes.query().where("status", "eq", "open").orderBy("created_at", "desc").page(1, 100);
 ```
+
+`where` takes a **named operator**, not a SQL one: `eq | ne | gt | gte | lt | lte | in`.
+Ordering is `orderBy(field, "asc" | "desc")`. `"="` and `.order()` do not exist and fail to
+typecheck.
 
 **You own partitioning and access control.** "Per-user" is a key convention plus a check you
 write:
@@ -72,6 +76,13 @@ write:
 const key = `${ctx.user!.id}:${recordId}`;          // partition
 const row = await notes.get(key);
 if (!row) return c.json({ error: "not found" }, 404);  // and the check
+```
+
+`prefix()` is the matching read for that key convention — one caller's rows, without scanning
+the collection:
+
+```ts
+await notes.query().prefix(`${ctx.user!.id}:`).orderBy("created_at", "desc").page(1, 100);
 ```
 
 Do not simulate the old `db.user` / `db.role()` scopes and assume the platform enforces them. It
@@ -306,6 +317,20 @@ await connector("gmail-jp").tools();                          // mcp: callable t
 await connector("gmail-jp").call("send_email", { ... });      // mcp: run one
 await connector("stripe").fetch("/v1/charges");               // http: method/path proxy
 await serviceConnectors();                                    // what this app may call
+```
+
+**`call()` on an MCP row resolves to the MCP content list, not the tool's payload.** You get
+`[{ type: "text", text: "..." }, ...]` and unwrap it yourself. `railcode connector call` prints
+the inner JSON, so the CLI output and the SDK return value look like the same shape when they
+are not — treating the envelope as the payload gives you a silently empty object, not an error:
+
+```ts
+const content = await connector("gmail-jp").call<{ type: string; text?: string }[]>(
+  "search_email",
+  { query: "from:billing" },
+);
+const text = content.map((c) => c.text ?? "").join("");
+const hits = JSON.parse(text);   // only when the tool documents JSON-as-text
 ```
 
 Manifest: `connectors: { "gmail-jp": ["send_email"] }` — `["*"]` for the whole row. **A missing

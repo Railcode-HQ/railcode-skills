@@ -178,8 +178,11 @@ is an array of parameter declarations. SQL comes from `--sql` or `--sql-file`, n
 params. SQL/param edits bump the version while preserving grants. Delete removes the saved
 query and grants naming it.
 
-The server injects `:_ctx_user_id`, `:_ctx_user_email`, and `:_ctx_org`; callers cannot
-override `_ctx*` values. Use these binds for unforgeable caller row-scoping. `list` exposes
+**The `:_ctx_user_id`, `:_ctx_user_email` and `:_ctx_org` binds have been removed.** A
+placeholder or param named `_ctx*` is rejected at create and at run time with `_ctx binds are
+no longer supported`. A saved query is a pure function of SQL + declared params: the caller's
+identity drives the grant check and the audit trail, never the binding. Per-caller row scoping
+is the author's job — declare a typed param and have the caller pass the value. `list` exposes
 signatures, never SQL text.
 
 ## Data Connections

@@ -80,7 +80,7 @@ app.get("/api/me", (c) => c.json({ user: ctx.user }));
 
 app.get("/api/notes", async (c) => {
   const rows = await db.collection("notes").query()
-    .where("owner", "=", ctx.user!.id).order("updated_at", "desc").page(1, 100);
+    .where("owner", "eq", ctx.user!.id).orderBy("updated_at", "desc").page(1, 100);
   return c.json({ items: rows });
 });
 

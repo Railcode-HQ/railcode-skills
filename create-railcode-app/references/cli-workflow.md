@@ -342,10 +342,11 @@ railcode query run my_orders --params '{"region":"emea","limit":5}'
   `string | int | float | bool`. A param declared with a `"default"` is optional at invoke
   time — the server binds the default when the caller omits it.
 - **`--params` for `run` is one JSON object**, exactly matching the SDK/API call.
-- **Context binds**: templates may reference `:_ctx_user_id`, `:_ctx_user_email` and
-  `:_ctx_org` — the server injects those from whoever invokes, and a caller-supplied
-  `_ctx*` param is rejected with a 400. `where rep_email = :_ctx_user_email` is per-caller
-  row scoping the caller cannot forge.
+- **No context binds**: `:_ctx_user_id`, `:_ctx_user_email` and `:_ctx_org` have been
+  **removed**. A placeholder or param named `_ctx*` is rejected at create and at run time
+  with `_ctx binds are no longer supported`. The caller's identity drives the grant check
+  and the audit trail, never the binding — per-caller row scoping is the author's job:
+  declare a typed param and have the caller pass the value.
 - `list`/`run` are member operations (invocation can be grant-gated per query by admins).
   `list` returns signatures only, never SQL text. Aliases: `query` = `queries`, `list` =
   `ls`, `run` = `invoke`; `--json` on `run` prints the raw
