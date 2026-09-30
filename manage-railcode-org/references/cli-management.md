@@ -196,13 +196,74 @@ railcode connections delete <name|uuid>
 
 Create replaces a same-name connection and dials it before saving. Supported shapes:
 
-- `postgres`: config `{host,database,username,port?,sslmode?}`, credentials `{password}`
+- `postgres`: config `{host,database,username,port?,sslmode?,ssh?}`, credentials `{password}`
+  (see [Postgres through an SSH bastion](#postgres-through-an-ssh-bastion))
 - `bigquery`: config `{project_id,dataset}`, credentials `{service_account_json}`
 - `turso`: config `{url}`, credentials `{auth_token}`
 
 Inline `--config <json>` and `--credentials <json>` are supported, but file options reduce
 shell-history exposure. Deleting a connection can break saved queries and apps; inspect
 dependents first.
+
+### Postgres through an SSH bastion
+
+A Postgres connection can reach a private database through one SSH bastion. Railcode's
+backend opens the tunnel; apps, agents, and saved queries use the connection name unchanged.
+Add `ssh` to the config and pass the client private key as a file (the `--ssh-key-file` flag
+needs **CLI 0.3.7 or later**):
+
+```json
+{
+  "host": "postgres.internal.example",
+  "port": 5432,
+  "database": "warehouse",
+  "username": "reader",
+  "sslmode": "require",
+  "ssh": {
+    "host": "bastion.example.com",
+    "port": 22,
+    "username": "railcode",
+    "host_key": "ssh-ed25519 AAAA..."
+  }
+}
+```
+
+```bash
+railcode connections create --name warehouse --kind postgres \
+  --config-file connection.json --credentials-file credentials.json \
+  --ssh-key-file ./railcode-bastion.pem
+```
+
+- `host`/`port` are the database address **as seen from the bastion**: a private IP, a private
+  DNS name, or `localhost` all work. Railcode only dials the bastion.
+- `ssh.host` must be public; Railcode cloud refuses private bastions. The bastion's firewall
+  must allow SSH from Railcode's egress IP, `34.211.16.38`.
+- `ssh.host_key` is the bastion's own public host key (for example the contents of
+  `/etc/ssh/ssh_host_ed25519_key.pub`). It is not the user's key, not a fingerprint, and not a
+  `known_hosts` line. Get it from the bastion admin. A changed host key is refused until the
+  connection is recreated.
+- `credentials.json` holds `password` and, for an encrypted key, `ssh_passphrase`. Without
+  `--ssh-key-file`, put the key's contents in `credentials.ssh_private_key`. Never put the key
+  or passphrase in the config; create rejects it.
+- Public-key auth only, one hop, and the bastion must allow TCP forwarding to the database.
+- Postgres TLS stays on through the tunnel. `verify-full` checks the database hostname against
+  the system trust store; a private CA is not a connection setting yet, so use `require` for a
+  self-signed database certificate.
+- `connections list` marks these `(SSH tunnel)`. Recreate the same name without `ssh` to switch
+  back to a direct connection.
+- Each query opens its own tunnel, so every query pays an SSH handshake on top of the query.
+
+Create dials before saving, and its errors name the cause:
+
+| Error says | Fix |
+|---|---|
+| host key does not match the trusted host key | Wrong `ssh.host_key`; re-read it from the bastion |
+| SSH authentication failed | Wrong `ssh.username`, or the public key is not in its `authorized_keys` |
+| SSH connection timed out | Bastion unreachable: firewall, port, or host |
+| bastion does not allow forwarding to host:port | `AllowTcpForwarding`/`PermitOpen` on the bastion |
+| bastion could not reach host:port | Wrong database host or port, or the database is down |
+| Postgres could not connect; check the database name, credentials, and TLS settings | Password, database, user, or `sslmode` |
+| Host is not allowed | `ssh.host` is private, loopback, or a metadata address |
 
 ## Service Connectors
 
