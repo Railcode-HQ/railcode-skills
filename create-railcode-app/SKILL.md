@@ -1,7 +1,7 @@
 ---
 name: create-railcode-app
 description: Build, modify, debug, test, and deploy Railcode apps end-to-end. Use when creating a Railcode app from an idea, scaffolding with the Railcode CLI, writing a backend worker with @railcode/sdk, wiring a frontend to worker routes, declaring app authority, testing with railcode dev, migrating a legacy v1 app to apps v2, maintaining an existing v1 browser-SDK app, adding to a v1 app something it cannot do (a secret, a backend, a cron, authorization that must hold), or deploying. Do not use for managed-agent authoring or general organization administration.
-version: 0.3.3
+version: 0.3.4
 ---
 
 # Create Railcode App
@@ -481,7 +481,7 @@ quietly build an approximation that can't work.
 | Inbound webhooks / public API endpoints | Your worker only runs on an authenticated app request or your own cron. Poll the source on a cron instead of receiving events |
 | Arbitrary outbound calls | Egress is an allow-list. Declare hosts under `egress:` (exact names or one wildcard level; no schemes, ports, or paths); the default is the data plane only |
 | Real-time push (websockets, presence) | No push surface; UIs poll. LLM streaming is the only streaming response |
-| Next.js | Needs the OpenNext adapter, and its SSR model doesn't map to the bounded single worker. Any other bundler that emits one self-contained ESM module works |
+| Next.js from `railcode init` on CLI 0.3.7 | There is no Next.js template yet, and the default routing sends only `/api/*` to the worker. It does run, through the OpenNext adapter: use the `migrate-to-railcode` skill's Next.js guide, for an existing project or a new one |
 | Custom domains, native mobile, push notifications | Apps are responsive web apps at `<app>.<parent>` |
 | Bring-your-own API keys in frontend code | The frontend holds nothing. Use `secrets` in the worker, or a connector |
 

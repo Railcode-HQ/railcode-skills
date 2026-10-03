@@ -1,0 +1,4 @@
+interface:
+  display_name: "Migrate to Railcode"
+  short_description: "Move an existing project onto Railcode"
+  default_prompt: "Use $migrate-to-railcode to move this existing project onto Railcode."
