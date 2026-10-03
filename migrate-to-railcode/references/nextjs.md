@@ -169,12 +169,22 @@ import { db } from "@railcode/sdk";
 const todos = db.collection<Todo>("todos");
 const key = (userId: string, id: string) => `${userId}:${id}`;
 
+const PAGE = 200;
+
 export async function listTodos() {
   const user = await me();
-  const rows = await todos.prefix(`${user.id}:`).page(1, 200);
-  return rows.map((row) => row.value);
+  const out: Todo[] = [];
+  // A page is not the list: keep reading until a short page.
+  for (let page = 1; ; page++) {
+    const rows = await todos.prefix(`${user.id}:`).page(page, PAGE);
+    out.push(...rows.map((row) => row.value));
+    if (rows.length < PAGE) return out;
+  }
 }
 ```
+
+Each page is one subrequest, and an invocation gets about 100. A list that can grow past a
+few thousand records needs real pagination in the UI, not a loop.
 
 Keys cannot contain `/`. For relational data that already lives in a company database, use a
 data connector and saved queries instead of an ORM over a socket.
@@ -190,19 +200,47 @@ invocation ends: use Next's `after()`, or `ctx.waitUntil(promise)`.
 
 ### 5. Secrets and env
 
+Secrets belong to an app, and the app is created by its first deploy. So the order is: deploy
+once (the features that need the secret will fail, which is fine), set the secrets, then
+verify.
+
 ```bash
+railcode deploy                        # creates the app
 railcode secrets set STRIPE_KEY        # prompts; never pass the value inline
 railcode secrets import .env.production
 ```
 
-Read them as `secrets.STRIPE_KEY` from `@railcode/sdk`. `NEXT_PUBLIC_*` values are inlined at
-build time as usual, from the environment the build runs in.
+Read them as `secrets.STRIPE_KEY` from `@railcode/sdk`.
+
+**Then take the private values out of the project's env files.** Two things would otherwise
+keep shipping them:
+
+- The adapter embeds the values of every env file it finds (`.env`, `.env.production`,
+  `.env.development`, `.env.test` and their `.local` variants) into the worker bundle at build
+  time.
+- `railcode deploy` uploads the project source so it can be pulled later. It skips `.env`,
+  `.env.local` and the `*.local` variants, but **not `.env.production`** unless `.gitignore`
+  lists it.
+
+Either way a credential stays in deploy history after it is rotated. After importing, delete
+the private keys from those files (or delete the files) and keep only `NEXT_PUBLIC_*` values,
+which are meant to be public and are inlined at build time as usual. Add `.env*` to
+`.gitignore` if it is not there.
 
 ### 6. Outbound calls, cron, files, LLM
 
 - Every host the server fetches goes under `egress:` in `manifest.yaml`.
-- A cron is a manifest entry that calls one of the app's own routes. The path must start with
-  `/api/`, so the handler lives at `app/api/<name>/route.ts`. `ctx.user` is `null` there.
+- A cron is a manifest entry that calls one of the app's own routes with a **`POST`**, and its
+  `path` must start with `/api/`. Export `POST` from the handler; a `GET`-only handler (the
+  Vercel cron shape) answers 405. `ctx.user` is `null` there, so do not gate it on a user.
+
+  | | Handler file | Manifest `path` |
+  |---|---|---|
+  | Path A | `app/api/refresh/route.ts` | `/api/refresh` |
+  | Path B (`basePath: "/api"`) | `app/refresh/route.ts` | `/api/refresh` |
+
+  On Path B every route is already under `/api`, so a handler at `app/api/refresh/` would be
+  served at `/api/api/refresh`.
 - Uploads move to `files`; a hosted LLM client moves to `llm` (`llm: true` in the manifest).
 
 ### 7. Middleware
@@ -212,7 +250,7 @@ Move what `middleware.ts` / `proxy.ts` did:
 | It did | Do instead |
 |---|---|
 | Auth redirects | Nothing. The platform gates the app |
-| Role checks | Check in the page or layout; `forbidden()` with `experimental.authInterrupts` renders `forbidden.tsx` |
+| Role checks | **In every Server Action and Route Handler that the rule protects**, against `ctx.user` — best in the shared data-access function they all call. Middleware used to cover those entry points; a check in a page or layout does not, because any org member can call an action or a route directly. Add `forbidden()` in the page as well (with `experimental.authInterrupts`, it renders `forbidden.tsx`) for the UI |
 | Redirects and rewrites | `redirects()` / `rewrites()` in `next.config.ts`, or a Route Handler |
 | Headers | `headers()` in `next.config.ts` |
 
@@ -223,7 +261,11 @@ railcode dev        # Path A: runs `next dev` with the SDK's dev credentials
 railcode deploy     # builds, uploads, prints the URL
 ```
 
-`railcode dev` uses a local scratch store, so it never touches deployed data. It runs Next in
+`railcode dev` keeps `db` and `files` in a local scratch store, so it never touches the
+deployed app's data. **Everything else is real**: SQL and saved queries, connectors, `email`,
+`llm` and agents are forwarded to the live Railcode instance under your own login. A test
+that sends an email sends it; a connector call that creates a record creates it. Point those
+at test accounts, or stub them, before exercising them locally. It runs Next in
 Node, while the deployed app runs in the worker runtime: a Node-only dependency works locally
 and fails when deployed. The first deploy is the real compatibility test, so deploy early.
 
@@ -267,6 +309,7 @@ load". A request that hangs leaves no log line at all — see the cache gotcha b
 | A list page makes N extra worker calls on load | `<Link>` prefetches every visible route. Use `prefetch={false}` on long lists |
 | `tsc` fails after adding a parallel route (`@modal`) | Stale `.next/types`. Rebuild |
 | Next warns about a lockfile in the home directory | Set `turbopack: { root: import.meta.dirname }` |
+| A page with many cache tags fails with a subrequest-limit error | The tag cache reads one record per tag, and an invocation gets about 100 subrequests in total. Keep tags per page well under that (Next allows 128); tag by collection, not by row |
 | A missing key shows as an `error` operation in the logs | A `db` `get` that finds nothing is logged that way. It is not a failure |
 
 ## What has and has not been proven

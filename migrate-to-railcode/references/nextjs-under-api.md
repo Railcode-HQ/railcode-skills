@@ -252,8 +252,14 @@ Once the three checks pass:
    holds real overrides, rewritten with `defineRailcodeConfig`).
 2. `npm uninstall @opennextjs/cloudflare wrangler && npm install -D @railcode/next`.
 3. In `next.config.ts` remove `basePath`, `assetPrefix` and the `/` redirect.
-4. Set `railcode.json` to `{ "app", "type": "next", "dist": "dist/client", "server": "dist/server/index.js" }`.
+4. Replace `railcode.json` with the following, keeping the app's existing slug:
+
+   ```json
+   { "app": "my-app", "type": "next", "dist": "dist/client", "server": "dist/server/index.js" }
+   ```
 5. Search the code for hand-written `/api/` URLs that were only there because of `basePath`
-   and drop the prefix. Routes that really live under `app/api/` keep it.
+   and drop the prefix. Routes that really live under `app/api/` keep it. Cron handlers move
+   the other way: `app/refresh/route.ts` becomes `app/api/refresh/route.ts`, so the manifest
+   path `/api/refresh` still reaches it.
 6. Deploy, then tell the people who use the app: every page URL just lost its `/api` prefix,
    so bookmarks to `/api/...` pages stop working.

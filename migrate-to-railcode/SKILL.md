@@ -74,7 +74,8 @@ Read the project and write down, with file paths:
 
 | The project has | On Railcode |
 |---|---|
-| Its own login, sessions, user table | Delete it. Read `ctx.user` (`id`, `email`, `name`, `is_admin`, `roles`). `appUsers` lists the org's members |
+| Its own login and sessions | Delete the authentication machinery. Read `ctx.user` (`id`, `email`, `name`, `is_admin`, `roles`). `appUsers` lists the org's members |
+| A user table | Keep what is application data (profiles, preferences, app-level roles): move it to `db`. Railcode user ids are **not** the old ids — see step 4 before importing anything keyed by user |
 | Per-user rows in its own database | `db` collections — one flat store per app, so put the user id in the key (`<userId>:<id>`) and enforce access in server code |
 | A company database it reads | A data connector an org admin sets up. Prefer saved queries (`query(name, params)`); direct SQL is `data(name).runSQL(...)` with `adhoc_sql:` in the manifest |
 | `process.env.SECRET` | `railcode secrets set NAME`, read as `secrets.NAME` |
@@ -109,6 +110,11 @@ new app has been checked.
 Existing data does not move by itself. If it matters, write a one-off import (a script that
 reads the old store and writes through a temporary admin-only route, or
 `railcode app kv` from the CLI), run it once, and delete it.
+
+Records owned by a user need their owner translated. The old app's user ids mean nothing on
+Railcode, so importing rows under their old ids leaves them unreachable. Build the mapping
+first — old id → email → the Railcode member with that email (`appUsers`) — show the user who
+did not match, and only then import, writing each record under the Railcode id.
 
 ### 5. Verify, then report
 

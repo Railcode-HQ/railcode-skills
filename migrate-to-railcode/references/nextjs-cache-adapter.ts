@@ -52,7 +52,10 @@ export const railcodeIncrementalCache: IncrementalCache = {
   async set(key, value, cacheType) {
     if (!cacheType || cacheType === "cache") return; // prerenders are read-only
     try {
-      await keepAlive(entries.put(await kvKey(cacheType, key), { value, lastModified: Date.now() }));
+      // Register the whole write, hashing included, before the first await.
+      await keepAlive(
+        kvKey(cacheType, key).then((k) => entries.put(k, { value, lastModified: Date.now() })),
+      );
     } catch (e) {
       console.error("[next-cache] set failed", e);
     }
@@ -68,11 +71,11 @@ const tagKey = (tag: string) =>
   btoa(String.fromCharCode(...new TextEncoder().encode(tag))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 
 // Next writes "use cache" entries after the response has streamed, and nothing
-// ties that write to the invocation. On Railcode the invocation then ends, its
-// unfinished I/O is dropped, and the write promise never settles. OpenNext keeps
-// pending writes in an isolate-wide map that later requests await, so every
-// following request for that key on the same isolate hung forever. Registering
-// each write with the invocation's waitUntil lets it finish.
+// ties that write to the invocation. On Railcode the invocation then ends and its
+// unfinished I/O is dropped, so the entry is never stored. Older OpenNext
+// versions also kept pending writes in an isolate-wide map that later requests
+// awaited, so every following request for that key on the same isolate hung.
+// Registering each write with the invocation's waitUntil lets it finish.
 function keepAlive<T>(work: Promise<T>): Promise<T> {
   try {
     ctx.waitUntil(work);
