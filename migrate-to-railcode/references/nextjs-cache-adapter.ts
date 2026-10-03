@@ -85,23 +85,54 @@ function keepAlive<T>(work: Promise<T>): Promise<T> {
 // One KV read per tag per invocation: OpenNext asks about the same tags several
 // times while serving one PPR page (shell, then resume). Same idea as the
 // per-request cache in OpenNext's D1 tag cache.
-type TagRow = { revalidatedAt: number; stale: number; expire: number | null } | null;
-const memo = new Map<string, Promise<TagRow>>();
-const invocation = () => {
+type TagRow = { revalidatedAt: number; stale: number; expire: number | null };
+
+// A tag whose record could not be read. It must count as revalidated: treating
+// an unreadable tag as "never revalidated" would keep serving an entry that an
+// updateTag() was meant to drop.
+const UNREADABLE = Symbol("unreadable");
+type TagRead = TagRow | null | typeof UNREADABLE;
+
+const memo = new Map<string, Promise<TagRead>>();
+
+// The invocation to memoize under, or null when there is none to scope to (the
+// build, or a local run where every request shares one id): a memo that
+// outlived its request would hide revalidations made by other requests.
+const invocation = (): string | null => {
   try {
-    return ctx.invocationId;
+    const id = ctx.invocationId;
+    return id && id !== "dev" ? id : null;
   } catch {
-    return "none";
+    return null;
   }
 };
-async function readTags(names: string[]) {
+
+const readTag = (tag: string): Promise<TagRead> =>
+  tags.get(tagKey(tag)).then(
+    (found): TagRead => found ?? null,
+    (e): TagRead => {
+      console.error("[next-cache] tag read failed", e);
+      return UNREADABLE;
+    },
+  );
+
+async function readTags(names: string[]): Promise<TagRead[]> {
   const id = invocation();
+  if (id === null) return Promise.all(names.map(readTag));
   if (memo.size > 500) memo.clear();
   return Promise.all(
     names.map((t) => {
       const k = `${id}:${t}`;
-      if (!memo.has(k)) memo.set(k, tags.get(tagKey(t)).catch(() => null));
-      return memo.get(k)!;
+      let row = memo.get(k);
+      if (!row) {
+        row = readTag(t);
+        memo.set(k, row);
+        // A failed read is retried by the next caller, not remembered.
+        void row.then((read) => {
+          if (read === UNREADABLE) memo.delete(k);
+        });
+      }
+      return row;
     }),
   );
 }
@@ -112,12 +143,14 @@ export const railcodeTagCache: NextModeTagCache = {
   async getLastRevalidated(names) {
     if (names.length === 0) return 0;
     const rows = await readTags(names);
-    return Math.max(0, ...rows.map((r) => r?.revalidatedAt ?? 0));
+    if (rows.includes(UNREADABLE)) return Date.now();
+    return Math.max(0, ...rows.map((r) => (r as TagRow | null)?.revalidatedAt ?? 0));
   },
   async hasBeenRevalidated(names, lastModified) {
     if (names.length === 0) return false;
     const now = Date.now();
     return (await readTags(names)).some((r) => {
+      if (r === UNREADABLE) return true;
       if (!r) return false;
       if (r.expire != null) return r.expire <= now && r.expire > (lastModified ?? 0);
       return r.revalidatedAt > (lastModified ?? now);
@@ -129,9 +162,12 @@ export const railcodeTagCache: NextModeTagCache = {
     const lastModifiedOrNow = lastModified ?? now;
     // Same rule as OpenNext's D1 tag cache: stale when the tag was revalidated
     // after this entry was written, inside its stale window, and not yet expired.
+    // An unreadable tag is not "stale" (serve-then-refresh): hasBeenRevalidated
+    // already drops the entry.
     return (await readTags(names)).some(
       (r) =>
         r != null &&
+        r !== UNREADABLE &&
         r.revalidatedAt > lastModifiedOrNow &&
         lastModifiedOrNow <= r.stale &&
         (r.expire == null || r.expire > now),
@@ -144,7 +180,8 @@ export const railcodeTagCache: NextModeTagCache = {
         const tag = typeof t === "string" ? t : t.tag;
         const stale = typeof t === "string" ? now : (t.stale ?? now);
         const expire = typeof t === "string" ? null : (t.expire ?? null);
-        memo.delete(`${invocation()}:${tag}`);
+        const id = invocation();
+        if (id !== null) memo.delete(`${id}:${tag}`);
         return tags.put(tagKey(tag), { revalidatedAt: stale, stale, expire });
       }),
     ));
