@@ -12,7 +12,7 @@ work across Claude Code, Codex, Cursor, and other agents.
 | --- | --- |
 | [`create-railcode-app`](create-railcode-app/SKILL.md) | Build, modify, debug, and deploy Railcode apps end-to-end — scaffolding with the CLI, writing the backend worker with `@railcode/sdk`, configuring access policies, testing with `railcode dev`, migrating legacy v1 apps, and deploying. |
 | [`create-railcode-agent`](create-railcode-agent/SKILL.md) | Build, test, publish, invoke, and schedule organization or personal Railcode managed agents. |
-| [`migrate-to-railcode`](migrate-to-railcode/SKILL.md) | Move an existing project from another host onto Railcode: inventory what it depends on, map each piece to a Railcode primitive, port, and deploy beside the original. First guide: Next.js. |
+| [`migrate-to-railcode`](migrate-to-railcode/SKILL.md) | Move an existing project from another host onto Railcode: inventory what it depends on, map each piece to a Railcode primitive, rebuild what has no direct equivalent, and deploy beside the original. Guides for Next.js and for container applications, plus what Railcode cannot host yet and how to request it. |
 | [`manage-railcode-org`](manage-railcode-org/SKILL.md) | Administer apps, members, roles/grants, saved queries, connections, service connectors, analytics, and logs through the CLI. |
 
 ## Examples
