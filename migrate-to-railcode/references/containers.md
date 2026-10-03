@@ -180,7 +180,8 @@ Decide per table, not for the database as a whole.
 | The data is | Put it |
 |---|---|
 | Owned by this app and simple: notes, tasks, settings, per-user records, small lookup lists | `db` collections |
-| Shared with other systems, large, reported on with SQL, or dependent on transactions and constraints | Leave it in its database. An org admin connects that database as a data connector; the worker calls saved queries (`query(name, params)`), or direct SQL when the user asks for it |
+| Shared with other systems, large, or reported on with SQL, and this app only **reads** it | Leave it in its database. An org admin connects that database as a data connector; the worker calls saved queries (`query(name, params)`), or direct SQL when the user asks for it |
+| Relational data this app must **write** with transactions or constraints | Data connectors are read-only. Keep a small write service on the old host (often a slice of the original server) and call its HTTP API from the worker, with the key in `secrets` and the host in `egress:`. Read through the connector |
 | Uploaded or generated files | `files` |
 | Sessions, password hashes, refresh tokens, email-verification rows | Nowhere. Delete |
 
@@ -189,8 +190,8 @@ If its data must stay relational, it has to move to a database the org hosts som
 Railcode can connect to; that is the user's decision and an admin's setup step, so raise it
 early.
 
-For data connectors, confirm what the connection permits before designing around it: ask the
-user or an admin whether the app may write through it, and prefer saved queries an admin
+SQL through a data connector is read-only, whatever the database credentials allow. Do not
+plan to move the app's inserts and updates onto a connector. Prefer saved queries an admin
 publishes over SQL embedded in the app.
 
 **Moving tables into `db`**
@@ -205,8 +206,10 @@ publishes over SQL embedded in the app.
   short page, or the tail is silently lost.
 
 There are no transactions, unique constraints or atomic increments. Where the original relied
-on one, either keep that table in a real database, or say so and design around it (a
-deterministic key gives uniqueness; a recount gives a total).
+on one, say so. A deterministic key makes a repeated write land on the same record, which is
+enough for idempotency, but `put()` overwrites: it cannot reject a duplicate or keep the first
+writer's record. A total can be recounted instead of incremented. When rejecting duplicates
+or all-or-nothing writes matter, keep those writes in a real database behind a write service.
 
 The ORM goes away: Prisma, SQLAlchemy and ActiveRecord models become TypeScript types and a
 few functions over `db.collection(...)`. Put those functions in one module per entity so
@@ -232,19 +235,41 @@ crons:
 ```ts
 app.post("/api/jobs/drain", async (c) => {          // cron calls with POST
   if (ctx.trigger !== "cron" && !ctx.user?.is_admin) return c.json({ error: "forbidden" }, 403);
-  const jobs = db.collection("jobs");
-  const batch = await jobs.query().where("status", "eq", "queued").orderBy("created_at", "asc").page(1, 10);
-  for (const job of batch) {
-    await jobs.put(job.id, { ...job, status: "running", claimed_by: ctx.invocationId });
-    await runJob(job);                               // must be safe to run twice
-    await jobs.put(job.id, { ...job, status: "done", finished_at: new Date().toISOString() });
+  const jobs = db.collection<Job>("jobs");
+  const now = Date.now();
+  const stale = new Date(now - 10 * 60_000).toISOString();     // a claim expires after 10 minutes
+  const queued = await jobs.query().where("status", "eq", "queued").orderBy("created_at", "asc").page(1, 10);
+  const stuck = await jobs.query().where("status", "eq", "running").where("claimed_at", "lt", stale).page(1, 10);
+  let processed = 0;
+  for (const { key, value: job } of [...stuck, ...queued].slice(0, 10)) {
+    if (job.attempts >= 3) {
+      await jobs.put(key, { ...job, status: "failed" });
+      continue;
+    }
+    const claimed = { ...job, status: "running" as const, attempts: job.attempts + 1,
+      claimed_by: ctx.invocationId, claimed_at: new Date().toISOString() };
+    await jobs.put(key, claimed);
+    try {
+      await runJob(key, job);                        // must be safe to run twice; `key` is its idempotency key
+      await jobs.put(key, { ...claimed, status: "done", finished_at: new Date().toISOString() });
+      processed++;
+    } catch (err) {
+      await jobs.put(key, { ...claimed, status: "queued", last_error: String(err) });
+    }
   }
-  return c.json({ processed: batch.length });
+  return c.json({ processed });
 });
 ```
 
-`query()` returns the stored values, so each job must carry its own key (`id` here) for the
-drain to write it back.
+`Job` is the app's own type (`status`, `attempts`, `created_at`, `claimed_at`, the payload).
+`query()` returns `{ key, value, updated_at }` records, so read the job from `value` and write
+it back under `key`.
+
+A job that throws goes back to `queued`. A job whose invocation died stays `running`, which
+is why the drain also picks up claims older than ten minutes; without that, one crash strands
+the job for good. After three attempts it is marked `failed` for a person to look at. The
+claim is not exclusive: two overlapping runs can both take a job, so the job itself must be
+safe to repeat.
 
 Rules that come from how cron works:
 
@@ -273,8 +298,8 @@ codebase for each.
 | The code does this | In a worker | Do this instead |
 |---|---|---|
 | Keeps state in module variables: an in-memory cache, a counter, a connection pool, a `Map` of sessions | Not kept between requests | Store it in `db`, or recompute it |
-| `setInterval`, `setTimeout` for later work, `node-cron` | The invocation ends with the response | A cron route |
-| Finishes work after sending the response | May be cut off | Do it before responding, or queue a job |
+| `setInterval`, `setTimeout` for later work, `node-cron` | Nothing runs between invocations | A cron route |
+| Finishes work after sending the response | Cut off unless registered | Short work: `ctx.waitUntil(promise)` keeps the invocation alive until it settles. Anything long or that must not be lost: queue a job |
 | Reads or writes local files (`fs`, `/tmp`, an uploads directory) | No filesystem | `files`; import static data into the bundle |
 | Spawns processes (`child_process`, `subprocess`) | Not available | A JavaScript library, a hosted API, or a managed agent |
 | Opens TCP connections (`pg`, `mysql2`, `mongoose`, `ioredis`, `nodemailer` over SMTP) | Not available | Data connectors, `db`, `email` |
