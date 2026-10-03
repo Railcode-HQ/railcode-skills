@@ -60,7 +60,8 @@ applies.
 | `next/og`, or any dependency that loads `.wasm` | Not available. The worker is one module |
 | Native Node addons, `fs` writes, child processes, raw TCP (a Postgres driver over a socket) | Not available in the worker runtime. Use `db`, `files`, or a data connector |
 | NextAuth / Auth.js, Clerk, a custom session | Delete it. Auth is ambient (`ctx.user`) |
-| ISR, `revalidate`, `"use cache"`, `revalidateTag` | Work on Path A (stored in the app's store). On Path B they need the cache adapter described there |
+| `export const revalidate = N` on a prerendered page (timed ISR) | **Does not work on either path.** The page is served from the worker bundle and keeps its build-time content until the next deploy. Render it per request, or cache the data with `"use cache"` + `cacheLife` |
+| `"use cache"`, the fetch cache, `cacheTag` / `updateTag` / `revalidateTag` | Work on Path A (stored in the app's store). On Path B they need the cache adapter described there |
 
 Check the worker size early. A plain App Router app builds to about 3 MB; Cache Components
 (`cacheComponents: true`) brings it to about 5.1 MB because Next ships a second copy of React.
