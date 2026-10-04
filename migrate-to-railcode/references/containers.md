@@ -68,7 +68,7 @@ depends on. Read them line by line and decide what each line becomes.
 |---|---|
 | The web or API server | The worker (`server/index.ts`) |
 | A frontend container (nginx serving a build, a Vite or CRA dev server) | The static `frontend/` |
-| Postgres, MySQL, Mongo, SQLite on a volume | See [Port the data](#port-the-data) |
+| Postgres, MySQL, Mongo, SQLite on a volume | See [Port the data](#port-the-data) and [databases.md](databases.md) |
 | Redis | Whatever it was used for: a cache → a `db` collection with an `expires_at`; sessions → gone with the login; a queue → [background work](#port-background-work); pub/sub → frontend polling |
 | A job worker (Celery, Sidekiq, BullMQ, RQ) | A cron route draining a `jobs` collection |
 | A scheduler (cron container, Celery beat, `node-cron`) | `crons:` in `manifest.yaml` |
@@ -181,18 +181,20 @@ Decide per table, not for the database as a whole.
 |---|---|
 | Owned by this app and simple: notes, tasks, settings, per-user records, small lookup lists | `db` collections |
 | Shared with other systems, large, or reported on with SQL, and this app only **reads** it | Leave it in its database. An org admin connects that database as a data connector; the worker calls saved queries (`query(name, params)`), or direct SQL when the user asks for it |
-| Relational data this app must **write** with transactions or constraints | Data connectors are read-only. Keep a small write service on the old host (often a slice of the original server) and call its HTTP API from the worker, with the key in `secrets` and the host in `egress:`. Read through the connector |
+| Relational data this app must **write**, or that the user wants to keep where it is | Keep the database and use it directly from the worker: the credential in `secrets`, the host in `egress:`, a client that speaks HTTPS. [databases.md](databases.md) has the drivers and the limits. Schema migrations move to the build script |
 | Uploaded or generated files | `files` |
 | Sessions, password hashes, refresh tokens, email-verification rows | Nowhere. Delete |
 
 A database running *inside* the compose stack is reachable by nobody once the stack is gone.
-If its data must stay relational, it has to move to a database the org hosts somewhere
-Railcode can connect to; that is the user's decision and an admin's setup step, so raise it
+If its data must stay relational, it has to move to a hosted database the worker can reach
+over HTTPS or an admin can connect as a data source; that is the user's decision, so raise it
 early.
 
 SQL through a data connector is read-only, whatever the database credentials allow. Do not
-plan to move the app's inserts and updates onto a connector. Prefer saved queries an admin
-publishes over SQL embedded in the app.
+plan to move the app's inserts and updates onto a connector; writes go through a direct
+connection with a secret. [databases.md](databases.md) covers both, the databases Railcode
+has no connector for, and where `prisma migrate`, Alembic and the like now run (the build
+script, not the worker).
 
 **Moving tables into `db`**
 
@@ -209,7 +211,8 @@ There are no transactions, unique constraints or atomic increments. Where the or
 on one, say so. A deterministic key makes a repeated write land on the same record, which is
 enough for idempotency, but `put()` overwrites: it cannot reject a duplicate or keep the first
 writer's record. A total can be recounted instead of incremented. When rejecting duplicates
-or all-or-nothing writes matter, keep those writes in a real database behind a write service.
+or all-or-nothing writes matter, keep those tables in the project's database and use it
+directly ([databases.md](databases.md)).
 
 The ORM goes away: Prisma, SQLAlchemy and ActiveRecord models become TypeScript types and a
 few functions over `db.collection(...)`. Put those functions in one module per entity so
@@ -302,7 +305,7 @@ codebase for each.
 | Finishes work after sending the response | Cut off unless registered | Short work: `ctx.waitUntil(promise)` keeps the invocation alive until it settles. Anything long or that must not be lost: queue a job |
 | Reads or writes local files (`fs`, `/tmp`, an uploads directory) | No filesystem | `files`; import static data into the bundle |
 | Spawns processes (`child_process`, `subprocess`) | Not available | A JavaScript library, a hosted API, or a managed agent |
-| Opens TCP connections (`pg`, `mysql2`, `mongoose`, `ioredis`, `nodemailer` over SMTP) | Not available | Data connectors, `db`, `email` |
+| Opens TCP connections (`pg`, `mysql2`, `mongoose`, `ioredis`, `nodemailer` over SMTP) | Not available | For a database: its HTTPS driver with a secret, or a data connector for reads ([databases.md](databases.md)). Otherwise `db`, `email` |
 | Calls any host it likes | Blocked unless declared | List each host under `egress:` |
 | Reads `process.env.X` | Not populated with the old values | `secrets.X`, after `railcode secrets set X` |
 | Depends on a native addon (`sharp`, `bcrypt`, `canvas`) | Does not load | A pure-JavaScript alternative (`bcryptjs`), or remove the need: password hashing goes with the login |

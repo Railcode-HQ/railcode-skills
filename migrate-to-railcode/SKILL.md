@@ -1,7 +1,7 @@
 ---
 name: migrate-to-railcode
-description: Migrate an existing project that was built for another host (Vercel, a Node server, a Docker container, a docker-compose stack) onto Railcode. Use when the user has a working app and wants it running on Railcode, including a Next.js app or a containerized backend in any language. Covers taking inventory of what the project depends on, mapping each dependency to a Railcode primitive, rebuilding the pieces that have no direct equivalent in a different way, porting, testing with railcode dev, deploying beside the original, and reporting what Railcode cannot host yet. Do not use for a new app from an idea, or for moving a Railcode v1 app to apps v2 — both belong to create-railcode-app.
-version: 0.1.0
+description: Migrate an existing project that was built for another host (Vercel, a Node server, a Docker container, a docker-compose stack) onto Railcode. Use when the user has a working app and wants it running on Railcode, including a Next.js app or a containerized backend in any language. Covers taking inventory of what the project depends on, mapping each dependency to a Railcode primitive, rebuilding the pieces that have no direct equivalent in a different way, porting, testing with railcode dev, keeping or connecting the project's existing database (Postgres or any other) and where schema migrations run, deploying beside the original, and reporting what Railcode cannot host yet. Do not use for a new app from an idea, or for moving a Railcode v1 app to apps v2 — both belong to create-railcode-app.
+version: 0.2.0
 ---
 
 # Migrate to Railcode
@@ -24,6 +24,13 @@ Guides by source project:
 | A container: a `Dockerfile` or docker-compose stack running a server in any language | [references/containers.md](references/containers.md) | Method and mappings built from the platform's documented behaviour; not yet backed by a recorded migration |
 
 For any other source, follow the method below and build the app with `create-railcode-app`.
+
+Railcode's own `db` is meant for fast, simple use. It has limits for a lot of data or complex
+queries (no joins, aggregates or transactions; paged reads), so a project that needs those
+keeps its database. [references/databases.md](references/databases.md) covers those limits,
+connecting a database as a data source, using it directly with a secret, databases Railcode
+has no connector for, where schema migrations run, and how to register interest in a managed
+Postgres through `railcode agent-feedback`.
 
 ## Update First
 
@@ -91,9 +98,11 @@ Read the project and write down, with file paths:
 |---|---|
 | Its own login and sessions | Delete the authentication machinery. Read `ctx.user` (`id`, `email`, `name`, `is_admin`, `roles`). `appUsers` lists the org's members |
 | A user table | Keep what is application data (profiles, preferences, app-level roles): move it to `db`. Railcode user ids are **not** the old ids — see step 4 before importing anything keyed by user |
-| Per-user rows in its own database | `db` collections — one flat store per app, so put the user id in the key (`<userId>:<id>`) and enforce access in server code |
-| A company database it reads | A data connector an org admin sets up. **Read-only**: SQL through a connector cannot write. Prefer saved queries (`query(name, params)`); direct SQL is `data(name).runSQL(...)` with `adhoc_sql:` in the manifest |
-| A relational database it writes to | Move the app's own tables into `db`. If the data must stay relational, see [Find another way](#find-another-way) |
+| Per-user rows in its own database | `db` collections — one flat store per app, so put the user id in the key (`<userId>:<id>`) and enforce access in server code. Suited to small, simple data; for large tables or complex queries keep the database |
+| A database it reads (Postgres, BigQuery, Turso) | Connect it as a data source: a data connector an org admin sets up. **Read-only.** Prefer saved queries (`query(name, params)`); direct SQL is `data(name).runSQL(...)` with `adhoc_sql:` in the manifest |
+| A database it reads **and writes** | Keep it and use it directly: the connection credential in `railcode secrets`, the host under `egress:`, and a client that speaks HTTPS (no raw TCP). Or move the app's own tables into `db`. See [references/databases.md](references/databases.md) |
+| A database Railcode has no connector for (MySQL, MongoDB, DynamoDB, Redis and so on) | The same: set its credentials as secrets, allow its host, and use it as before over its HTTPS API |
+| Schema migrations (Prisma, Drizzle, Alembic, Rails) | Run them in the build or deploy script, on the machine that runs it, never in the worker. See [references/databases.md](references/databases.md#schema-migrations-run-in-the-build-script) |
 | `process.env.SECRET` | `railcode secrets set NAME`, read as `secrets.NAME` |
 | Cron jobs | `crons:` in `manifest.yaml`, each calling one of the app's own routes with `POST` |
 | Outbound fetches | List each host under `egress:` |
@@ -180,7 +189,7 @@ Shapes that work:
 | Pushes live updates over websockets or SSE | The frontend polls a cheap route every few seconds, only while the tab is visible. Return an `updated_at` so an unchanged poll is a tiny response | Updates arrive within the poll interval |
 | Streams text to the browser | Return a streamed `Response`; `toNdjson()` in the SDK does the framing | Nothing |
 | Joins and filters in SQL on its own database | Design keys for the reads the screens make (`<userId>:<id>`, `prefix()`), store a little duplicated data, filter with `query().where()`, and paginate until a short page. If the data is shared with other systems, leave it in that database and read it through a data connector | Nothing, if the keys match the screens |
-| Writes to a relational database that must stay relational (transactions, constraints, other systems read it) | Data connectors are read-only, so writes need an HTTP API in front of that database: keep a small write service on the old host (often a slice of the original server), and call it from the worker with a secret and an `egress:` host. Reads go through the data connector | A small service stays on the old host |
+| Writes to a relational database that must stay relational (transactions, constraints, other systems read it) | Keep the database and use it directly from the worker with a secret and an HTTPS driver ([references/databases.md](references/databases.md)). Data connectors are read-only, so they cover the reads only. If the database has no HTTPS interface, put one in front of it or keep a small write service on the old host | Nothing, when an HTTPS driver exists |
 | Caches in Redis or in process memory | A `db` collection with an `expires_at` field checked on read. In-memory caches do not survive between requests | Nothing |
 | Rate-limits or locks with Redis | A `db` row per key holding a counter and a window start. It is not atomic, so use it for fairness, not for money | Nothing |
 | Full-text search over its own records | For a few thousand records, load and filter in the worker or the browser. Beyond that, query the source database through a connector, or call a hosted search API through `egress:` | Nothing |
@@ -222,12 +231,11 @@ inventory, not after the port.
 | **Its own identity system**: logging in people who are not org members, issuing its own API keys or tokens to third parties | Identity is the organization's membership |
 | **True real time**: collaborative editing, presence, multiplayer, a websocket server | There is no push surface. Polling covers "looks current", not "keystroke by keystroke" |
 | **A long-lived process**: a daemon, a bot holding a socket open, a stream consumer (Kafka, Postgres `LISTEN`), work that must fire more often than once a minute | The worker runs per request and then stops |
-| **Non-HTTP protocols**: a database driver over TCP (`pg`, `mysql2`, `ioredis`), an SMTP server, gRPC | No raw TCP in or out. Databases are read through data connectors |
+| **Non-HTTP protocols**: a database driver over TCP (`pg`, `mysql2`, `ioredis`), an SMTP server, gRPC | No raw TCP in or out. Databases are reached through a data connector (reads) or an HTTPS driver with a secret (reads and writes); see [references/databases.md](references/databases.md). A database with only a socket interface and nothing in front of it cannot be reached |
 | **The container itself**: a Python, Go, Ruby, Java or PHP server run as it is, system packages, native addons, a GPU, a local model | The backend is one JavaScript module. Other languages are ported, not hosted — see the [container guide](references/containers.md) |
 | **A large or multi-file backend bundle**: `.wasm` modules, a worker over the size cap (5 MB on CLI 0.3.7) | The worker is a single ESM module |
 | **A custom domain, a native mobile app, browser push notifications** | Apps are web apps at `<app>.<parent>` |
 | **Its own mail domain**: an inbound mail server, an address the app owns, or `email.send()` from a custom sender | `email` is send-only from a platform sender. Mail through a Gmail account someone owns is supported; see [Find another way](#find-another-way) |
-| **Strong data guarantees in the app's own store**: multi-row transactions, unique constraints that reject duplicates, atomic counters | `db` is a flat store with none of these, and `put()` overwrites. Data connectors are read-only, so they do not provide them either. Such writes need a service outside Railcode; see [Find another way](#find-another-way) |
 
 When the project needs one of these:
 
