@@ -25,9 +25,12 @@ Guides by source project:
 
 For any other source, follow the method below and build the app with `create-railcode-app`.
 
-A project that already has a database can keep it. [references/databases.md](references/databases.md)
-covers connecting it as a data source, using it directly with a secret, databases Railcode
-has no connector for, and where schema migrations run.
+Railcode's own `db` is meant for fast, simple use. It has limits for a lot of data or complex
+queries (no joins, aggregates or transactions; paged reads), so a project that needs those
+keeps its database. [references/databases.md](references/databases.md) covers those limits,
+connecting a database as a data source, using it directly with a secret, databases Railcode
+has no connector for, where schema migrations run, and how to register interest in a managed
+Postgres through `railcode agent-feedback`.
 
 ## Update First
 
@@ -95,7 +98,7 @@ Read the project and write down, with file paths:
 |---|---|
 | Its own login and sessions | Delete the authentication machinery. Read `ctx.user` (`id`, `email`, `name`, `is_admin`, `roles`). `appUsers` lists the org's members |
 | A user table | Keep what is application data (profiles, preferences, app-level roles): move it to `db`. Railcode user ids are **not** the old ids — see step 4 before importing anything keyed by user |
-| Per-user rows in its own database | `db` collections — one flat store per app, so put the user id in the key (`<userId>:<id>`) and enforce access in server code |
+| Per-user rows in its own database | `db` collections — one flat store per app, so put the user id in the key (`<userId>:<id>`) and enforce access in server code. Suited to small, simple data; for large tables or complex queries keep the database |
 | A database it reads (Postgres, BigQuery, Turso) | Connect it as a data source: a data connector an org admin sets up. **Read-only.** Prefer saved queries (`query(name, params)`); direct SQL is `data(name).runSQL(...)` with `adhoc_sql:` in the manifest |
 | A database it reads **and writes** | Keep it and use it directly: the connection credential in `railcode secrets`, the host under `egress:`, and a client that speaks HTTPS (no raw TCP). Or move the app's own tables into `db`. See [references/databases.md](references/databases.md) |
 | A database Railcode has no connector for (MySQL, MongoDB, DynamoDB, Redis and so on) | The same: set its credentials as secrets, allow its host, and use it as before over its HTTPS API |

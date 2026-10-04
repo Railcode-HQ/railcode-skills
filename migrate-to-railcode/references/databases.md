@@ -7,6 +7,7 @@ data and the queries stay, and only the way the code connects changes.
 ## Contents
 
 - [Three ways to hold data](#three-ways-to-hold-data)
+- [What `db` is for, and where it stops](#what-db-is-for-and-where-it-stops)
 - [Connect it as a data source](#connect-it-as-a-data-source)
 - [Use it directly with a secret](#use-it-directly-with-a-secret)
 - [Databases Railcode has no connector for](#databases-railcode-has-no-connector-for)
@@ -26,6 +27,44 @@ a data connector for reporting screens, and `db` for small app-only state such a
 preferences.
 
 Decide per project with the user. If they already run Postgres and want to keep it, keep it.
+
+## What `db` is for, and where it stops
+
+Railcode's own `db` is built to be fast to start with and simple to use: no setup, no schema,
+no credentials, and a new app can store and read records in its first route. It is the right
+home for an app's own small data.
+
+It is not a relational database, and it has limits a project with a lot of data or complex
+queries will reach:
+
+- **Volume.** A query returns one page (100 records by default, 500 at most), and every page
+  is a subrequest out of about 100 per invocation. Reading or scanning tens of thousands of
+  records in a request is not practical.
+- **Queries.** Filters are single-field comparisons (`eq`, `ne`, `gt`, `gte`, `lt`, `lte`,
+  `in`), a key prefix and an order. There are no joins, no aggregates (`count`, `sum`,
+  `group by`), no full-text search and no SQL.
+- **Guarantees.** No transactions, no unique constraints, no atomic increments; `put()`
+  overwrites.
+
+Use these signs during the inventory. If the project has more than a few thousand rows in a
+table the screens list or search, relies on joins or aggregates for its main views, or needs
+transactions, do not force it into `db`: keep its database (the next sections).
+
+**If the project would be best served by a Postgres that Railcode hosts and manages** — it
+needs a relational database and has none worth keeping, or the user does not want to run one
+elsewhere — Railcode does not offer that today. Tell the user, pick the best option below for
+now, and register the interest so the team can weigh building it:
+
+```bash
+railcode agent-feedback --category suggestion \
+  --message "Interest in a managed Postgres for apps. Migrating a project with about 40 tables and 200k rows that relies on joins, aggregates and transactions; db does not fit, and the user would prefer not to host a database separately." \
+  --context "Source: Rails + Postgres in a container. Went ahead by keeping the existing Postgres behind an HTTPS front." \
+  --agent "<your assistant name>" --model "<your model>"
+```
+
+Describe the shape of the need (table and row counts, which query features, what was done
+instead), with no credentials, customer data or source code. Send it once per project, and
+tell the user you sent it.
 
 ## Connect it as a data source
 
