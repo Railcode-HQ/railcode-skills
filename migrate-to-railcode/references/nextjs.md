@@ -58,7 +58,7 @@ applies.
 | `middleware.ts` / `proxy.ts` | Move the logic. It adds about 3 MB to the worker — see [Gotchas](#gotchas) |
 | `next/image` optimization | Set `images: { unoptimized: true }`. There is no image optimizer |
 | `next/og`, or any dependency that loads `.wasm` | Not available. The worker is one module |
-| Native Node addons, `fs` writes, child processes, raw TCP (a Postgres driver over a socket) | Not available in the worker runtime. Use `db`, `files`, or a data connector |
+| Native Node addons, `fs` writes, child processes, raw TCP (a Postgres driver over a socket) | Not available in the worker runtime. Use `db`, `files`, a data connector, or the database's HTTPS driver with a secret ([databases.md](databases.md)) |
 | NextAuth / Auth.js, Clerk, a custom session | Delete it. Auth is ambient (`ctx.user`) |
 | `export const revalidate = N` on a prerendered page (timed ISR) | **Does not work on either path.** The page is served from the worker bundle and keeps its build-time content until the next deploy. Render it per request, or cache the data with `"use cache"` + `cacheLife` |
 | `"use cache"`, the fetch cache, `cacheTag` / `updateTag` / `revalidateTag` | Work on Path A (stored in the app's store). On Path B they need the cache adapter described there |
@@ -186,8 +186,13 @@ export async function listTodos() {
 Each page is one subrequest, and an invocation gets about 100. A list that can grow past a
 few thousand records needs real pagination in the UI, not a loop.
 
-Keys cannot contain `/`. For relational data that already lives in a company database, use a
-data connector and saved queries instead of an ORM over a socket.
+Keys cannot contain `/`.
+
+A project that already has a database (Postgres behind Prisma or Drizzle is the usual case)
+can keep it instead of moving to `db`: read it through a data connector, or use it directly
+with a secret and an HTTPS driver. The socket driver does not connect from the worker.
+[databases.md](databases.md) has the options, and says where `prisma migrate deploy` or
+`drizzle-kit migrate` now runs: in a deploy script, never in `package.json` `"build"`.
 
 ### 4. Server Actions, Route Handlers, streaming
 
