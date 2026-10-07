@@ -1,7 +1,7 @@
 ---
 name: create-railcode-app
 description: Build, modify, debug, test, and deploy Railcode apps end-to-end. Use when creating a Railcode app from an idea, scaffolding with the Railcode CLI, writing a backend worker with @railcode/sdk, wiring a frontend to worker routes, declaring app authority, testing with railcode dev, migrating a legacy v1 app to apps v2, maintaining an existing v1 browser-SDK app, adding to a v1 app something it cannot do (a secret, a backend, a cron, authorization that must hold), or deploying. Do not use for managed-agent authoring or general organization administration.
-version: 0.3.4
+version: 0.3.5
 ---
 
 # Create Railcode App
@@ -117,6 +117,34 @@ An owned row is `restricted` (owner, admins, and whoever it is shared with) unti
 platform SDK served from `/_api/sdk.js`. What it does need is a **rebuild**, because the call
 site is compiled into its bundle — so this is only actionable by someone who still has the
 app's source.
+
+## Projects And Apps
+
+The Railcode console now says **project** where it used to say app: **My projects**, **New
+project**, a project's Settings page. The word changed because what you deploy is not always
+something a person opens in a browser — it may be a web app, an agent, an API, or a worker
+with no UI at all. "Project" covers all of them.
+
+**A project and an app are the same object.** Only the console's wording changed. The CLI
+(`railcode apps`, `railcode init`, `railcode deploy`), `railcode.json`, the API, and console
+URLs (`/apps/<slug>`) still say `app`, and so does the rest of this skill. Read the two words
+as interchangeable:
+
+- When the user says "my project", "the project's settings", or "share the project", they mean
+  the app. Use the `app` commands and the app slug; there is no `railcode project` command.
+- When talking to the user, follow their word. Someone who came from the console will say
+  project; do not correct them.
+- A project created in the console's **New project** dialog already exists in the org with
+  nothing deployed. Use **exactly its slug** — `railcode init <slug>` for a new folder, or the
+  same value as `"app"` in `railcode.json` for existing code — so the deploy lands in that project instead
+  of creating a second one.
+- The one place the words differ: outside Railcode, "project" also means a source folder or
+  repo (the `migrate-to-railcode` skill uses it that way). If it is unclear which the user
+  means, check `railcode apps list` for a matching name before asking.
+
+A project that is an agent in this sense is still an app: code you wrote, running in a worker.
+A **managed agent** — a manifest Railcode runs for you, listed under **Agents** in the console
+— is a different thing, built with the `create-railcode-agent` skill.
 
 ## First: Which Generation?
 
