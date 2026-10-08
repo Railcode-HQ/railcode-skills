@@ -53,7 +53,8 @@ applies.
 | Public pages, anonymous visitors, self-signup | **Blocker.** Every viewer is a signed-in org member |
 | Webhooks or public API routes called by other services | **Blocker** for those routes. Poll on a cron, or leave them on the old host |
 | Pages Router (`pages/`) | Untested. The adapter supports it; nothing here has been verified with it. Say so, and budget time |
-| A Next.js version older than 15.5.27, or 16.0–16.3.7 | Upgrade first. The adapter needs `>=15.5.27 <16` or `>=16.3.8` |
+| A Next.js version older than 15.5.27, or 16.0–16.3.7 | Upgrade first. The adapter needs `>=15.5.27 <16` or `>=16.3.8 <16.4` |
+| Next.js 16.4 or newer | **Pin `next` to `~16.3.8`.** The build passes and then every request to the deployed worker fails — see [Gotchas](#gotchas). A `^16.3.8` range installs 16.4, so check `node_modules/next/package.json`, not `package.json` |
 | `export const runtime = "edge"` | Remove it. The adapter runs everything in the Node-compatible runtime |
 | `middleware.ts` / `proxy.ts` | Move the logic. It adds about 3 MB to the worker — see [Gotchas](#gotchas) |
 | `next/image` optimization | Set `images: { unoptimized: true }`. There is no image optimizer |
@@ -89,6 +90,7 @@ run_as: app
 ```bash
 npm install @railcode/sdk
 npm install -D @railcode/next
+npm install --save-exact next@16.3.8     # if the project is on 16.4 or a ^16 range
 ```
 
 ```json
@@ -305,6 +307,7 @@ load". A request that hangs leaves no log line at all — see the cache gotcha b
 | Symptom | Cause and fix |
 |---|---|
 | Machine slows to a halt; dozens of `opennextjs-cloudflare build` processes | `package.json` `build` points at the Railcode build. The adapter runs `npm run build`. Set it back to `next build`, kill the processes |
+| Every page and route returns 500 `{"error":"app_error"}` while static files still load; the log says `Unexpected loadManifest(/.next/server/preview-props.json) call!` | Next.js 16.4. It reads a manifest the OpenNext adapter (1.20.9) does not bundle. Pin `next` to `~16.3.8`, delete `.next` and `.open-next`, redeploy. Seen on Path A; Path B builds with the same adapter, so expect the same there |
 | Every Server Action returns 500: `x-forwarded-host ... does not match origin` | The worker sees the platform's internal `Host`. Fixed in the platform on servers with Path A support. On Path B the worker entry rewrites both `Host` and `x-forwarded-host` — see that guide. Do not "fix" it with `serverActions.allowedOrigins` and a wildcard: that admits every other app on the same parent domain |
 | Build fails: `@railcode/sdk only runs inside a deployed Railcode worker` | A page that calls the SDK is being prerendered. Add the `connection()` boundary |
 | Upload rejected as too large, or a 502 during deploy | The worker is over the size limit. Remove `proxy.ts`/middleware first (about 3 MB), then heavy server dependencies |
@@ -326,9 +329,14 @@ including a streamed LLM response, `after()`, intercepting and parallel routes, 
 `next/font`, `instrumentation.ts` `onRequestError`, and Cache Components with `"use cache"`,
 `cacheLife`, `cacheTag` and `updateTag`.
 
-Path A was verified by building that same app with `@railcode/next` and running it locally
-(pages at their normal URLs, `railcode dev` with the SDK). It had not been deployed to a
-Railcode server when this was written.
+Path A was first verified by building that same app with `@railcode/next` and running it
+locally (pages at their normal URLs, `railcode dev` with the SDK). It has since been deployed
+to a Railcode preview server from the `railcode init --template next` starter on Next.js
+16.3.8: pages and dynamic routes at their normal URLs, Route Handlers on every method with the
+public host in `Host` and `req.url`, Server Actions from a browser, a streamed `Suspense`
+boundary, `notFound()`, `redirect()`, `unstable_cache` with `revalidateTag`, and files from
+`public/`. Not yet deployed on Path A: Cache Components, `after()`, intercepting and parallel
+routes, and the larger app proven on Path B.
 
 Not tested at all: Pages Router, i18n routing, `next/image` with a custom loader, multi-user
 isolation under load, and Next.js 15.

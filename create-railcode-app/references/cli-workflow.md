@@ -155,6 +155,36 @@ guide.
 `type` drives build, dev, and deploy. `server` names the built worker module; `dist` the static
 output. **Never add `"server"` to a generation-1 app** — the deploy is refused with `422`.
 
+### Next.js and worker-first routing (newer than CLI 0.3.7)
+
+By default only `/api/*` and `/_serverFn/*` reach the worker; every other path is a static file
+or the root `index.html`. A release after 0.3.7 adds a fifth template and a second routing mode.
+Neither exists in 0.3.7, so check before using them:
+
+```bash
+railcode --help | grep -- "--template"     # 1. does the template list include "next"?
+npm view @railcode/next version            # 2. is the preset published? (Next.js only)
+curl -s <api-url>/api/config               # 3. is "worker_routes" in deploy_capabilities?
+```
+
+`<api-url>` is the server the CLI is logged in to (`https://api.railcode.app` unless the user
+logged in with `--api-url`).
+
+- **`railcode init <app> --template next`** (needs 1, 2 and 3) scaffolds a Next.js App Router
+  app: `"type": "next"`, built by `@railcode/next`, served at its normal URLs. `package.json`
+  `build` must stay `next build`, and `next` must stay on `~16.3.8`. Pages that call the SDK
+  render per request. The `migrate-to-railcode` skill's Next.js guide covers the porting rules
+  and the limits; they apply to a new app as much as to a migrated one.
+- **`"routes": "all"`** in `railcode.json` (needs 1 and 3) is for a bring-your-own stack whose
+  worker renders pages. A `GET` or `HEAD` for a file in `dist` is still served as that file;
+  every other request, on any method, goes to the worker, and there is no `index.html`
+  fallback (a root `index.html` is no longer required). `"type": "next"` implies it. Reverting
+  a deploy restores its routing with it.
+
+The CLI refuses a `routes: all` or `type: next` deploy against a server without
+`worker_routes`, so a wrong guess fails at deploy rather than shipping a broken app. Signed-out
+requests are redirected to login before they reach the worker in both modes.
+
 ### A minimum-CLI floor gates NEW apps
 
 Creating an app requires a current CLI (default floor **0.2.0**); a stale CLI would scaffold
