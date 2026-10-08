@@ -1,7 +1,7 @@
 ---
 name: create-railcode-app
 description: Build, modify, debug, test, and deploy Railcode apps end-to-end. Use when creating a Railcode app from an idea, scaffolding with the Railcode CLI, writing a backend worker with @railcode/sdk, wiring a frontend to worker routes, declaring app authority, testing with railcode dev, migrating a legacy v1 app to apps v2, maintaining an existing v1 browser-SDK app, adding to a v1 app something it cannot do (a secret, a backend, a cron, authorization that must hold), or deploying. Do not use for managed-agent authoring or general organization administration.
-version: 0.3.5
+version: 0.3.6
 ---
 
 # Create Railcode App
@@ -363,8 +363,10 @@ Cover at least:
   SaaS → a service connector. Any LLM use? If AI is involved, establish its **shape**: does it
   process files, run code, or need to survive the request? Any yes → a **managed agent**.
 - **Stack** — default to `hono+vite`. Offer `hono+static` for something small, `tanstack` when
-  the user wants file-based routing and server functions, `static` when there is no backend at
-  all.
+  the user wants file-based routing and server functions, `next` (CLI 0.3.8 or later) when the user
+  asks for Next.js or needs server-rendered pages (read its limits in
+  `references/cli-workflow.md` first),
+  `static` when there is no backend at all.
 - **Design** — *"Should I use the default Railcode design system, or do you have a specific
   design direction?"*
 - **Browser testing** — *"Should I test my changes in a browser before calling it done?"*
@@ -382,7 +384,7 @@ skip it and use **Visual Direction** below.
 ### 3. Build the app
 
 ```bash
-railcode init <app> [dir] [--template hono+vite|hono+static|tanstack|static]
+railcode init <app> [dir] [--template hono+vite|hono+static|tanstack|next|static]
 cd <app>
 npm install
 railcode dev
@@ -509,7 +511,7 @@ quietly build an approximation that can't work.
 | Inbound webhooks / public API endpoints | Your worker only runs on an authenticated app request or your own cron. Poll the source on a cron instead of receiving events |
 | Arbitrary outbound calls | Egress is an allow-list. Declare hosts under `egress:` (exact names or one wildcard level; no schemes, ports, or paths); the default is the data plane only |
 | Real-time push (websockets, presence) | No push surface; UIs poll. LLM streaming is the only streaming response |
-| Next.js from `railcode init` on CLI 0.3.7 | There is no Next.js template yet, and the default routing sends only `/api/*` to the worker. It does run, through the OpenNext adapter: use the `migrate-to-railcode` skill's Next.js guide, for an existing project or a new one |
+| Next.js outside what the preset supports | Next.js itself runs: `railcode init <app> --template next` (App Router, pages at their normal URLs; see "Next.js and worker-first routing" in `references/cli-workflow.md`). Not supported: Next 16.4 (it builds, then fails on every request — keep `next` on `~16.3.8`), the image optimizer, `next/og` and anything else that loads `.wasm`, and timed ISR (`export const revalidate = N`). Pages Router is untested. If the CLI has no `next` template or the server has no `worker_routes` (an old binary, a self-hosted server that is behind), the `migrate-to-railcode` skill's Next.js guide has a fallback that mounts the app under `/api` |
 | Custom domains, native mobile, push notifications | Apps are responsive web apps at `<app>.<parent>` |
 | Bring-your-own API keys in frontend code | The frontend holds nothing. Use `secrets` in the worker, or a connector |
 
@@ -519,7 +521,7 @@ quietly build an approximation that can't work.
 |---|---|
 | The worker must be **one self-bundled ESM module** | A code-split, CJS, or dependency-referencing worker deploys and then **crashes at invocation**. The CLI guarantees this for its templates; bring-your-own is on you |
 | Subrequest budget | ~100 per invocation. Use `files.urls()` for batches, not a loop of `files.url()` |
-| Module size | 5 MB soft cap |
+| Module size | 10 MB (5 MB on a server without `worker_routes`) |
 | Secrets | 64 per app, 5 KB per value, write-only |
 | Daily caps | LLM tokens and emails per app; both return a typed `429` |
 | Invocation logs | Retained ~14 days |
