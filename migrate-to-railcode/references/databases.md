@@ -153,9 +153,9 @@ Things that differ from a server holding a connection pool:
   application code, then writes over a held connection is not available; rewrite it as one
   batch, or as a single statement with a CTE.
 - **Watch the bundle.** A full ORM runtime can be several megabytes; the worker has a size
-  cap (5 MB on CLI 0.3.7). A light query builder or tagged SQL is the safer choice. If the
-  project uses Prisma or another heavy ORM, build once and check the size before committing
-  to keep it.
+  cap (10 MB; 5 MB on a server without `worker_routes`). A light query builder or tagged SQL
+  is the safer choice. If the project uses Prisma or another heavy ORM, build once and check
+  the size before committing to keep it.
 - **Secrets are read as `secrets.NAME`**, not `process.env.NAME`. Under `railcode dev` they
   come from your local environment, so local dev can point at a development database.
 - **Keep the connection string out of files that get bundled or uploaded.** After

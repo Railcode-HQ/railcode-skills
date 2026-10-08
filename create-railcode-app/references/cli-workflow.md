@@ -19,7 +19,7 @@ The CLI ships as the npm package **`railcode`**. The app-building subset is:
 ```
 railcode login [--api-url <url>] [--paste|--no-browser]   Sign in and mint a personal API token
 railcode login --setup-token <token>          Non-interactive onboarding login (one-time setup token)
-railcode init <app> [dir] [--template hono+vite|hono+static|tanstack|static]   Scaffold an app
+railcode init <app> [dir] [--template hono+vite|hono+static|tanstack|next|static]   Scaffold an app
 railcode dev [--port <n>] [--reset]           Run the frontend AND the worker locally
 railcode deploy [--private] [--no-source] [--force]   Build + deploy the static tree and worker
 railcode pull [<deploy>] [--app <slug>] [--dir <path>] [--force]   Download a deploy's stored source
@@ -117,7 +117,7 @@ or already used, generate a fresh prompt from the dashboard.
 ## Create An App
 
 ```bash
-railcode init <app> [dir] [--template hono+vite|hono+static|tanstack|static]
+railcode init <app> [dir] [--template hono+vite|hono+static|tanstack|next|static]
 ```
 
 - Validates the app slug against `^[a-z0-9][a-z0-9-]{0,62}$` (a DNS label).
@@ -126,14 +126,16 @@ railcode init <app> [dir] [--template hono+vite|hono+static|tanstack|static]
   fine, but an existing `railcode.json` is refused unless `--force`.
 - **Every app created is generation 2 (apps v2).** There is no v1 template and no downgrade.
 
-The four stacks — and **the CLI owns the build for all of them**, so the app declares no
-bundler, no `wrangler`, no Cloudflare package, and no worker build script:
+The five stacks — and **the CLI owns the build for all of them**, so the app declares no
+bundler, no `wrangler`, no Cloudflare package, and no worker build script (`next` builds
+through the `@railcode/next` dev dependency, which the template installs):
 
 | Template | Frontend | Worker | Layout |
 |---|---|---|---|
 | **`hono+vite`** (default) | Vite + React | Hono | `frontend/` + `server/index.ts` |
 | `hono+static` | one `index.html`, no build | Hono | `frontend/index.html` + `server/index.ts` |
 | `tanstack` | TanStack Start (SPA mode) | server fns + `/api/*` | file routes; data routes need `ssr: false` |
+| `next` | Next.js App Router, rendered by the worker | the Next app itself: Server Components, Server Actions, Route Handlers | `app/`; every path reaches the worker. See [Next.js and worker-first routing](#nextjs-and-worker-first-routing) |
 | `static` | static tree | **none** | pure hosting; no server code |
 
 Each worker template scaffolds a small **platform tour** — identity (`ctx.user` + `appUsers`), a
@@ -155,35 +157,61 @@ guide.
 `type` drives build, dev, and deploy. `server` names the built worker module; `dist` the static
 output. **Never add `"server"` to a generation-1 app** — the deploy is refused with `422`.
 
-### Next.js and worker-first routing (newer than CLI 0.3.7)
+### Next.js and worker-first routing
 
 By default only `/api/*` and `/_serverFn/*` reach the worker; every other path is a static file
-or the root `index.html`. A release after 0.3.7 adds a fifth template and a second routing mode.
-Neither exists in 0.3.7, so check before using them:
+or the root `index.html`. There is a fifth template and a second routing mode for apps whose
+worker renders the pages:
+
+- **`railcode init <app> --template next`** scaffolds a Next.js App Router app: `"type": "next"`,
+  built by the `@railcode/next` dev dependency, served at its normal URLs. Server Components,
+  Server Actions and Route Handlers call `@railcode/sdk` directly; there is no separate
+  `server/index.ts`, and no `wrangler` or OpenNext config in the project.
+- **`"routes": "all"`** in `railcode.json` is for a bring-your-own stack whose worker renders
+  pages. A `GET` or `HEAD` for a file in `dist` is still served as that file; every other
+  request, on any method, goes to the worker, and there is no `index.html` fallback (a root
+  `index.html` is no longer required). `"type": "next"` implies it. Reverting a deploy restores
+  its routing with it.
+
+Signed-out requests are redirected to login before they reach the worker in both modes.
+
+**Rules for a `next` app.** They are easy to break and each one fails badly:
+
+- `package.json` `build` stays the plain `next build`. The Railcode build calls that script, so
+  pointing it back at the Railcode build starts a build inside every build.
+- `next` stays on `~16.3.8`. Next 16.4 builds and then fails on every request. A `^16` range
+  installs 16.4, so check `node_modules/next/package.json`.
+- A page that calls the SDK renders per request: `await connection()` (from `next/server`)
+  before the first SDK call, or `export const dynamic = "force-dynamic"`. The SDK needs a
+  request and there is none while `next build` prerenders.
+- Secrets go in `railcode secrets set`, not `.env*`. The adapter embeds every env file's values
+  in the worker bundle; the build warns by key name about each non-`NEXT_PUBLIC_` value.
+- `images: { unoptimized: true }` stays in `next.config.ts`. No `next/og`, no `.wasm`, no timed
+  ISR (`export const revalidate = N` keeps build-time content until the next deploy; use
+  `"use cache"` + `cacheLife`, which is stored in the app's own store).
+- Avoid `proxy.ts` / middleware: it adds about 3 MB to the worker.
+- `railcode dev` runs Next in Node and the deployed app runs in the worker runtime, so a
+  Node-only dependency works locally and fails when deployed. Deploy early.
+
+The `migrate-to-railcode` skill's Next.js guide has the full porting rules, the gotchas table
+and what has been proven; they apply to a new app as much as to a migrated one.
+
+**If `init` rejects `--template next`, or a deploy is refused.** Both features need a CLI and a
+server that have them, and a stale binary or a self-hosted server that is behind may not:
 
 ```bash
 railcode --help | grep -- "--template"     # 1. does the template list include "next"?
-npm view @railcode/next version            # 2. is the preset published? (Next.js only)
+npm view @railcode/next version            # 2. can npm install the preset? (Next.js only)
 curl -s <api-url>/api/config               # 3. is "worker_routes" in deploy_capabilities?
 ```
 
 `<api-url>` is the server the CLI is logged in to (`https://api.railcode.app` unless the user
-logged in with `--api-url`).
-
-- **`railcode init <app> --template next`** (needs 1, 2 and 3) scaffolds a Next.js App Router
-  app: `"type": "next"`, built by `@railcode/next`, served at its normal URLs. `package.json`
-  `build` must stay `next build`, and `next` must stay on `~16.3.8`. Pages that call the SDK
-  render per request. The `migrate-to-railcode` skill's Next.js guide covers the porting rules
-  and the limits; they apply to a new app as much as to a migrated one.
-- **`"routes": "all"`** in `railcode.json` (needs 1 and 3) is for a bring-your-own stack whose
-  worker renders pages. A `GET` or `HEAD` for a file in `dist` is still served as that file;
-  every other request, on any method, goes to the worker, and there is no `index.html`
-  fallback (a root `index.html` is no longer required). `"type": "next"` implies it. Reverting
-  a deploy restores its routing with it.
-
-The CLI refuses a `routes: all` or `type: next` deploy against a server without
-`worker_routes`, so a wrong guess fails at deploy rather than shipping a broken app. Signed-out
-requests are redirected to login before they reach the worker in both modes.
+logged in with `--api-url`); `api.railcode.app` has `worker_routes`. If 1 fails, update the CLI
+(`npm install -g railcode@latest`) and look again; CLI 0.3.7 and older have neither feature. If
+3 fails, the server has to be upgraded: the CLI refuses a `routes: all` or `type: next` deploy
+against a server without `worker_routes`, so a wrong guess fails at deploy rather than shipping
+a broken app. Until then, Next.js still runs through the fallback in the `migrate-to-railcode`
+skill (the app mounted under `/api`).
 
 ### A minimum-CLI floor gates NEW apps
 
@@ -204,16 +232,21 @@ railcode dev [--port <n>] [--reset]
 ```
 
 Run it from the directory containing `railcode.json`. It serves the frontend **and the worker**,
-carving exactly the paths production carves (`/api/*`, `/_serverFn/*`).
+carving exactly the paths production carves (`/api/*`, `/_serverFn/*`; every path without a
+static file for `"routes": "all"`).
 
 - **`tanstack`** — the Vite preset runs the worker in embedded workerd; the CLI proxies `/api`
   and `/_serverFn` to Vite.
+- **`next`** — the CLI runs `next dev` with the SDK's dev credentials in its environment. Next
+  renders the pages and runs the server code itself, in Node, at every path.
 - **`hono+vite` / `hono+static` / bring-your-own** — the CLI bundles the worker with esbuild
   (watched), runs it **in-process**, and serves the same paths. A rebuild re-imports the worker
   on the next request.
 
 Either way the worker calls the CLI's local data plane over HTTP with the **same wire shape as
-production**, so "works in `railcode dev`" means "works deployed."
+production**, so "works in `railcode dev`" means "works deployed." The one exception is
+`next`: the data plane is the same, but the runtime is Node locally and the worker runtime when
+deployed, so the first deploy is the real compatibility test.
 
 What is local vs forwarded:
 

@@ -1,8 +1,9 @@
 # Next.js on Railcode, Path B: the app under `/api`
 
-Use this when [the checks in the main guide](nextjs.md#which-path) say `"type": "next"` is not
-available yet. It works on CLI 0.3.7 and was the path used for the app the guide was proven
-on.
+This is the fallback. Use it only when [the checks in the main guide](nextjs.md#which-path)
+say `"type": "next"` is not available where you are deploying: a server without
+`worker_routes`, or a CLI that cannot be updated past 0.3.7. It was the path used for the app
+the guide was proven on, before Path A existed.
 
 The idea: a Railcode server without `worker_routes` sends only `/api/*` to the worker and
 serves everything else from the static tree. So the whole Next app is mounted at `/api`, its
@@ -10,8 +11,9 @@ hashed assets are served statically from `/static`, and a one-line `index.html` 
 deep links to `/api/...`.
 
 Costs, so the user can decide: every page URL starts with `/api`, and the project carries
-five small files of build plumbing. When Path A becomes available, delete them
-([Moving to Path A](#moving-to-path-a)).
+five small files of build plumbing. As soon as Path A is available, delete them
+([Moving to Path A](#moving-to-path-a)). An app that was deployed this way earlier should move
+now.
 
 Do the code port from the main guide ([Porting the code](nextjs.md#porting-the-code-both-paths))
 either before or after this; the two are independent.

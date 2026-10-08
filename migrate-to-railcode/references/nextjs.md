@@ -4,8 +4,9 @@ Next.js runs on Railcode as one worker that renders every page: Server Component
 Actions, Route Handlers and streaming all work. The app is built through the OpenNext
 Cloudflare adapter into a single module.
 
-There are two ways to get there, and which one you use depends on what is released where you
-are deploying. **Check first.**
+There are two ways to get there. **Path A, `"type": "next"`, is the one to use**: the app is
+served at its normal URLs and carries no adapter config. Path B is a fallback for a CLI or a
+server that does not have Path A yet.
 
 ## Contents
 
@@ -22,24 +23,26 @@ are deploying. **Check first.**
 
 ## Which path
 
+Use Path A. `railcode.app` supports it, and so does a current CLI. Confirm before starting,
+because an old binary or a self-hosted server that is behind may not:
+
 ```bash
 railcode --help | grep -- "--template"     # 1. does the template list include "next"?
-npm view @railcode/next version            # 2. is the preset published?
+npm view @railcode/next version            # 2. can npm install the preset?
 curl -s <api-url>/api/config               # 3. is "worker_routes" in deploy_capabilities?
 ```
 
 `<api-url>` is the Railcode server the CLI is logged in to (`https://api.railcode.app` unless
 the user logged in with `--api-url`).
 
-| All three are true | Use |
+| Result | Use |
 |---|---|
-| Yes | **Path A** — `"type": "next"`. The app is served at its normal URLs and carries no adapter config |
-| Any is missing | **Path B** — [the app lives under `/api`](nextjs-under-api.md), with a hand-written build script. It works on CLI 0.3.7 today |
+| All three pass | **Path A** — `"type": "next"` |
+| 1 fails | Update the CLI (`npm install -g railcode@latest`) and check again. CLI 0.3.7 and older do not have the template |
+| 2 or 3 fails, or 1 still fails after updating | **Path B** — [the app lives under `/api`](nextjs-under-api.md), with a hand-written build script. Tell the user what it costs (every URL starts with `/api`) and that it is temporary |
 
-When this guide was written (CLI 0.3.7) none of the three were released yet, so expect Path B
-until they are. Do not assume: run the checks. The CLI refuses a Path A deploy against a
-server that lacks `worker_routes`, so a wrong guess fails loudly rather than deploying a
-broken app.
+Do not guess. The CLI refuses a Path A deploy against a server that lacks `worker_routes`, so
+a wrong guess fails loudly rather than deploying a broken app.
 
 Everything from [Porting the code](#porting-the-code-both-paths) onward applies to both paths.
 

@@ -20,7 +20,7 @@ Guides by source project:
 
 | Source project | Guide | Status |
 |---|---|---|
-| Next.js (App Router) | [references/nextjs.md](references/nextjs.md) | Proven on a real app, with gaps listed in the guide |
+| Next.js (App Router) | [references/nextjs.md](references/nextjs.md) | Supported as `"type": "next"`, built by `@railcode/next`. Proven on a real app, with gaps listed in the guide |
 | A container: a `Dockerfile` or docker-compose stack running a server in any language | [references/containers.md](references/containers.md) | Method and mappings built from the platform's documented behaviour; not yet backed by a recorded migration |
 
 For any other source, follow the method below and build the app with `create-railcode-app`.
@@ -233,7 +233,7 @@ inventory, not after the port.
 | **A long-lived process**: a daemon, a bot holding a socket open, a stream consumer (Kafka, Postgres `LISTEN`), work that must fire more often than once a minute | The worker runs per request and then stops |
 | **Non-HTTP protocols**: a database driver over TCP (`pg`, `mysql2`, `ioredis`), an SMTP server, gRPC | No raw TCP in or out. Databases are reached through a data connector (reads) or an HTTPS driver with a secret (reads and writes); see [references/databases.md](references/databases.md). A database with only a socket interface and nothing in front of it cannot be reached |
 | **The container itself**: a Python, Go, Ruby, Java or PHP server run as it is, system packages, native addons, a GPU, a local model | The backend is one JavaScript module. Other languages are ported, not hosted — see the [container guide](references/containers.md) |
-| **A large or multi-file backend bundle**: `.wasm` modules, a worker over the size cap (5 MB on CLI 0.3.7) | The worker is a single ESM module |
+| **A large or multi-file backend bundle**: `.wasm` modules, a worker over the size cap (10 MB; 5 MB on a server without `worker_routes`) | The worker is a single ESM module |
 | **A custom domain, a native mobile app, browser push notifications** | Apps are web apps at `<app>.<parent>` |
 | **Its own mail domain**: an inbound mail server, an address the app owns, or `email.send()` from a custom sender | `email` is send-only from a platform sender. Mail through a Gmail account someone owns is supported; see [Find another way](#find-another-way) |
 

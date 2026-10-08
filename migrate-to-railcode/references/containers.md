@@ -311,7 +311,7 @@ codebase for each.
 | Depends on a native addon (`sharp`, `bcrypt`, `canvas`) | Does not load | A pure-JavaScript alternative (`bcryptjs`), or remove the need: password hashing goes with the login |
 | Makes hundreds of calls in one request | About 100 subrequests per invocation | Batch (`files.urls()`), page, or split into steps |
 | Listens on a websocket | No push surface | Frontend polling |
-| Ships a very large dependency tree | The worker is one bundled module with a size cap (5 MB on CLI 0.3.7) | Drop server-only packages that no longer apply (ORM, auth, queue client); check the bundle size after the first build |
+| Ships a very large dependency tree | The worker is one bundled module with a size cap (10 MB; 5 MB on a server without `worker_routes`) | Drop server-only packages that no longer apply (ORM, auth, queue client); check the bundle size after the first build |
 
 Secrets need the app to exist. The first deploy creates it, so deploy once (private, before
 any secret-dependent route matters), then run `railcode secrets set`, then verify.
