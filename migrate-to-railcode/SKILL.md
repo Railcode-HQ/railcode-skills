@@ -45,7 +45,7 @@ npm view railcode version
 ```
 
 If npm is unreachable, say so and do not claim this guidance is current. This version was
-written against **CLI 0.3.7** and **`@railcode/sdk` 0.4.0**.
+written against **CLI 0.3.8**, **`@railcode/sdk` 0.4.0** and **`@railcode/next` 0.1.0**.
 
 This skill does not restate the SDK, the manifest or the deploy flow. Those live in
 `create-railcode-app` (`references/worker-sdk.md`, `references/cli-workflow.md`,

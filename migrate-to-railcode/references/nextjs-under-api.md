@@ -2,7 +2,7 @@
 
 This is the fallback. Use it only when [the checks in the main guide](nextjs.md#which-path)
 say `"type": "next"` is not available where you are deploying: a server without
-`worker_routes`, or a CLI that cannot be updated past 0.3.7. It was the path used for the app
+`worker_routes`, or a CLI that cannot be updated to 0.3.8. It was the path used for the app
 the guide was proven on, before Path A existed.
 
 The idea: a Railcode server without `worker_routes` sends only `/api/*` to the worker and

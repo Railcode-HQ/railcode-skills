@@ -23,7 +23,7 @@ server that does not have Path A yet.
 
 ## Which path
 
-Use Path A. `railcode.app` supports it, and so does a current CLI. Confirm before starting,
+Use Path A. `railcode.app` supports it, and so does CLI 0.3.8 or later. Confirm before starting,
 because an old binary or a self-hosted server that is behind may not:
 
 ```bash
@@ -38,7 +38,7 @@ the user logged in with `--api-url`).
 | Result | Use |
 |---|---|
 | All three pass | **Path A** — `"type": "next"` |
-| 1 fails | Update the CLI (`npm install -g railcode@latest`) and check again. CLI 0.3.7 and older do not have the template |
+| 1 fails | Update the CLI (`npm install -g railcode@latest`) and check again. The template needs CLI 0.3.8 or later |
 | 2 or 3 fails, or 1 still fails after updating | **Path B** — [the app lives under `/api`](nextjs-under-api.md), with a hand-written build script. Tell the user what it costs (every URL starts with `/api`) and that it is temporary |
 
 Do not guess. The CLI refuses a Path A deploy against a server that lacks `worker_routes`, so

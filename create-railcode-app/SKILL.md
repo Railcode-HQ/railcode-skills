@@ -363,8 +363,9 @@ Cover at least:
   SaaS → a service connector. Any LLM use? If AI is involved, establish its **shape**: does it
   process files, run code, or need to survive the request? Any yes → a **managed agent**.
 - **Stack** — default to `hono+vite`. Offer `hono+static` for something small, `tanstack` when
-  the user wants file-based routing and server functions, `next` when the user asks for Next.js
-  or needs server-rendered pages (read its limits in `references/cli-workflow.md` first),
+  the user wants file-based routing and server functions, `next` (CLI 0.3.8 or later) when the user
+  asks for Next.js or needs server-rendered pages (read its limits in
+  `references/cli-workflow.md` first),
   `static` when there is no backend at all.
 - **Design** — *"Should I use the default Railcode design system, or do you have a specific
   design direction?"*

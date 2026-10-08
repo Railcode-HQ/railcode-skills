@@ -160,8 +160,8 @@ output. **Never add `"server"` to a generation-1 app** — the deploy is refused
 ### Next.js and worker-first routing
 
 By default only `/api/*` and `/_serverFn/*` reach the worker; every other path is a static file
-or the root `index.html`. There is a fifth template and a second routing mode for apps whose
-worker renders the pages:
+or the root `index.html`. CLI 0.3.8 adds a fifth template and a second routing mode for apps
+whose worker renders the pages:
 
 - **`railcode init <app> --template next`** scaffolds a Next.js App Router app: `"type": "next"`,
   built by the `@railcode/next` dev dependency, served at its normal URLs. Server Components,
@@ -207,7 +207,7 @@ curl -s <api-url>/api/config               # 3. is "worker_routes" in deploy_cap
 
 `<api-url>` is the server the CLI is logged in to (`https://api.railcode.app` unless the user
 logged in with `--api-url`); `api.railcode.app` has `worker_routes`. If 1 fails, update the CLI
-(`npm install -g railcode@latest`) and look again; CLI 0.3.7 and older have neither feature. If
+(`npm install -g railcode@latest`) and look again; both features need CLI 0.3.8 or later. If
 3 fails, the server has to be upgraded: the CLI refuses a `routes: all` or `type: next` deploy
 against a server without `worker_routes`, so a wrong guess fails at deploy rather than shipping
 a broken app. Until then, Next.js still runs through the fallback in the `migrate-to-railcode`
