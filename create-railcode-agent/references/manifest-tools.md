@@ -20,7 +20,7 @@ the manifest either — it's a sibling field the CLI sends alongside `manifest` 
 | Key | Type | Grants (runtime tool names) | Permission gate |
 |---|---|---|---|
 | `saved_queries` | `string[]` (query names) | `query(name, params)` | must be a ratified saved query in the org |
-| `connectors` | `{connector: endpoint[]}` | `connector(name, method, path, body)` | each `connector:endpoint` must be ratified |
+| `connectors` | `{connector: endpoint[]}` — an endpoint is `"GET /v1/items"` for an http row, a tool slug such as `"send_email"` for an mcp row or linked account, or `"*"` for the whole row | `connector(name, method, path, body)` for http rows; `connector_tools(name)` (the tools this manifest lets it run, with schemas) and `connector_call(name, tool, arguments)` for mcp rows | each `connector:endpoint` must be ratified by the agent's creator — an org-managed row, one they own, or one shared with them. **Per-user** rows (`mode: per-user` in `railcode connector list`) are rejected: they run on a caller's account and an agent has none |
 | `docs` | `string[]` (connector names) | `docs(connector)` — reads that connector's stored docs | connector must exist |
 | `email` | `bool \| {emails: string[], domains: string[]}` | `email(to, subject, html/text, cc, bcc)` — recipients restricted to the allowlist when one is set | `email` grant (org default: `*`) |
 | `adhoc_sql` | `string[]` (connection names) | `sql(connection, text, params)` — raw SQL, no firewall | `connector` grant; also a ratification **warning** ("prefer saved queries or read-only credentials") |
@@ -28,15 +28,14 @@ the manifest either — it's a sibling field the CLI sends alongside `manifest` 
 | `app_data_write` | `string[]` (app slugs) — **write** | `app_kv_set`, `app_kv_delete`, `publish_artifact_to_app(name, app)` | `can_manage_app` — the app's **owner, or an org admin, only**. Declaring it for an app you don't manage is a **hard save failure**, not a warning |
 | `app_files` | `string[]` (app slugs) — file **read**; no wildcard | `search_app_files` (metadata only: name substring/prefix, exact content type, lexicographic paging; each result reports its scope) and `load_app_file(app, name)` — downloads the one object into the sandbox at `/workspace/in/apps/{app}/{name}` and returns the local path + metadata to the model, never bytes, object keys, or storage URLs. Re-loading the same path in one run is idempotent (first snapshot wins). Both take the optional `scope` argument (note below) | `can_access_app` — same bar as `app_data`, ratified normally |
 | `agent_kv` | `bool` | `agent_kv_get/set/query/delete` against the agent's own private, cross-run store | none beyond holding the agent itself |
-| `personal_connectors` | `string[]` — toolkit names or `toolkit:tool` pairs (e.g. `["gmail"]` or `["gmail:send_email"]`); tool slugs are lowercase and case-sensitive, so copy discovery output exactly | `personal_tools(toolkit)` (list that toolkit's callable tools + schemas) and `personal_call(toolkit, tool, arguments)` (run one) | **`visibility: personal` only** — a save with this key on an `org` agent is a hard failure. Execution uses the agent owner's connected account and 403s if it is not connected. **Bundled toolkits only**: user-added `custom_<slug>` MCP connectors work in apps but are not declarable by managed agents |
+| ~~`personal_connectors`~~ | **Removed** (CLI 0.3.0). A save still carrying it fails with *"`tools.personal_connectors` was removed — link the account as a connector and name it under tools.connectors"*. The account someone linked is now an ordinary row (`gmail-jp`), named under `connectors` like any other; its credential is the row's, so org agents and crons can use it too | — | — |
 
 A save that adds authority you don't hold (any grant-backed row above — `saved_queries`,
 `connectors`, `docs`, `email`, `adhoc_sql`, `app_data`, `app_data_write`, `app_files`)
 fails with the missing operations named — grant it via the org's roles/grants first
-(`$manage-railcode-org`), or drop it from the manifest. `personal_connectors` is the one
-exception: it has no grant to hold or ratify (there is no resource for a third party to
-be granted — the agent's owner's own connection is the whole authority), so the only save
-gate is `visibility: personal`.
+(`$manage-railcode-org`), or drop it from the manifest. For a connector someone **owns**, the
+grant is theirs to give: they `railcode connector share <name> --user <you>` (or open it to the
+org), and the save goes through without an admin.
 
 ## Sandbox
 

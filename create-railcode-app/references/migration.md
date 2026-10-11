@@ -154,8 +154,9 @@ quietly getting away with it; in a worker loop you will silently drop a large co
 
 `run_as: app` is mandatory. Declare **every** capability the worker uses.
 
-**Personal connectors and agents are refusals, not pass-through** — declare every toolkit and
-every agent name, even ones the v1 manifest never listed, or they 403 at runtime.
+**Connectors and agents are refusals, not pass-through** — declare every connector (by its row
+name, with the operations used) and every agent name, even ones the v1 manifest never listed,
+or they 403 at runtime.
 
 ## The interactive LLM tool loop
 
@@ -211,8 +212,8 @@ routes are more specific, so they win over the splat.
 - [ ] Identity from `ctx.user` (or `/_api/me`).
 - [ ] KV `list()` paginates.
 - [ ] Worker routes relay `ApiError` status + body verbatim.
-- [ ] `run_as: app`; **every** capability declared, including every personal-connector toolkit and
-      every agent name.
+- [ ] `run_as: app`; **every** capability declared, including every connector row (shared, owned
+      or per-user) and every agent name.
 - [ ] Scoped v1 data: either lifted into the flat store, or confirmed unused.
 - [ ] Interactive tool loops: browser loop + worker turns, **generate-based**.
 - [ ] Deployed and confirmed the manifest ratified (`railcode manifest show <app>`).

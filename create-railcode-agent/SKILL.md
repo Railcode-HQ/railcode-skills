@@ -1,7 +1,7 @@
 ---
 name: create-railcode-agent
-description: Build, test, publish, invoke, schedule, and update Railcode managed agents with the Railcode CLI. Use when creating an organization or personal managed agent, editing an agent manifest (JSON or YAML), running a draft or saved agent, investigating a run, managing its cron schedule, running it from Slack (@Railcode $agent), pairing it with a companion app, processing files in its sandbox, or using personal connectors (Gmail, Slack, ...) on behalf of one owner. Do not use for static Railcode apps, in-app LLM tool loops (llm.generate({ tools }) — see create-railcode-app), or general organization administration.
-version: 0.1.25
+description: Build, test, publish, invoke, schedule, and update Railcode managed agents with the Railcode CLI. Use when creating an organization or personal managed agent, editing an agent manifest (JSON or YAML), running a draft or saved agent, investigating a run, managing its cron schedule, running it from Slack (@Railcode $agent), pairing it with a companion app, processing files in its sandbox, or acting through a connector one person owns (their Gmail, Slack, Granola, ...). Do not use for static Railcode apps, in-app LLM tool loops (llm.generate({ tools }) — see create-railcode-app), or general organization administration.
+version: 0.1.26
 ---
 
 # Create Railcode Agent
@@ -62,9 +62,9 @@ CLIs may return `Unknown command`; treat that as unavailable.
 ## Map The Request To Railcode
 
 Use this table before authoring the manifest. If the request names an external product or
-data source, always check data connections/saved queries, service connectors, **and personal
-connectors** before deciding what is available; the detailed discovery commands are in the
-scoping step.
+data source, always check data connections/saved queries **and connectors** (shared, or an
+account someone linked and owns) before deciding what is available; the detailed discovery
+commands are in the scoping step.
 
 **Hard file boundary:** whenever AI must **read, understand, extract, summarize, transform, or
 generate a file**, use a **managed agent** with `tools.app_files` and its sandbox. The companion
@@ -75,9 +75,10 @@ file artifacts as a substitute. Publish durable results back through `tools.app_
 | What the user asks for | Use this Railcode feature |
 |---|---|
 | "Analyze company metrics/orders/customers from our database" | `tools.saved_queries` (default); use `tools.adhoc_sql` only when direct SQL is explicitly requested |
-| "Use our team's shared Stripe, CRM, or other SaaS account" | `tools.connectors` plus `tools.docs`; the org owns the service-connector credential |
-| "Use my Gmail, Slack, or another account I personally connected" | `tools.personal_connectors` on a **personal** agent; calls run as the agent owner |
-| "Connect my account to a product Railcode does not bundle" | A custom MCP personal connector works for an **app, not an agent**; offer a companion app, service connector, or data import path |
+| "Use our team's shared Stripe, CRM, or other SaaS account" | `tools.connectors` plus `tools.docs`; an org-managed connector holds the credential |
+| "Use my Gmail, Slack, or another account I personally connected" | The same `tools.connectors`, naming the row the person linked and owns (`railcode connector link gmail` → `gmail-jp`). The agent's creator must hold it (owner, or shared with them); the credential is the row's, so this works for org agents and crons too |
+| "Connect my account to a product Railcode does not bundle" | `railcode connector add-mcp <name> <https-url>` — a remote MCP server as a connector the person owns, then name it under `tools.connectors` like any other row |
+| "Everyone should act as themselves (their own meetings, inbox)" | **Not an agent.** A **per-user connector** runs on the *caller's* account and an agent has no caller: the manifest is rejected. Build a Railcode app (`$create-railcode-app`) — or name a connector one person owns and accept that the agent acts as that person |
 | "Read records people manage in a Railcode app" | `tools.app_data`, usually with a companion app |
 | "Read, extract, summarize, transform, or generate a file with AI" | **Managed agent** with `tools.app_files` + sandbox; never the companion app's `llm` |
 | "Edit this Word document / DOCX and preserve it as a file" | **Managed agent + companion app**: the app stores/manages source and output files; declare `tools.app_files` to load the DOCX and `tools.app_data_write` to publish the edited document |
@@ -87,10 +88,10 @@ file artifacts as a substitute. Publish durable results back through `tools.app_
 | "Write results or publish an artifact back to an app" | `tools.app_data_write` (`app_kv_*` / `publish_artifact_to_app`) |
 | "Remember state between runs" | `tools.agent_kv`; use app storage instead when humans need to view or edit it |
 | "Parse files, produce documents, or run code" | Managed-agent sandbox plus `tools.app_files`; publish durable outputs back to an app with `tools.app_data_write` |
-| "Email a report from the system" | `tools.email`; use a Gmail **personal connector** when it must send from the owner's own mailbox |
+| "Email a report from the system" | `tools.email`; name a Gmail **connector the owner linked** under `tools.connectors` when it must send from their own mailbox |
 | "Run every morning, from Slack, or after a browser closes" | Managed agent plus a cron schedule or the built-in Slack invocation path |
 | "Give people a UI to upload inputs, trigger runs, or review results" | A companion Railcode app whose **worker** calls `agents.start()` (see [Companion Apps](#companion-apps)) |
-| "Call an arbitrary website/API" | First look for service or bundled personal connectors; otherwise offer connector setup/import—a managed agent cannot fetch the open web or declare custom MCP toolkits |
+| "Call an arbitrary website/API" | First look for an existing connector (`railcode connector list`); otherwise offer to add one (`connector catalog` / `link` / `add-mcp` / an admin's `connector create`) or an import path — a managed agent cannot fetch the open web |
 
 ## Sandbox Capabilities
 
@@ -137,7 +138,7 @@ plus its agent manifests**, which is the shape most agent work takes.
 | Example | What it is | Showcases |
 | --- | --- | --- |
 | [`agents/pitch-deck`](https://github.com/Railcode-HQ/railcode-examples/tree/main/agents/pitch-deck) | An app for uploading company materials, paired with an agent that writes a polished pitch-deck PDF from them. | App-paired managed agents: `app_data`/`app_files` access, code execution, and a run started with `agents.start()` from the app's worker because a worker cannot hold one open. |
-| [`agents/proposals`](https://github.com/Railcode-HQ/railcode-examples/tree/main/agents/proposals) | An agent that watches Granola meetings on a cron and drafts an editable `.docx` proposal, paired with an app that displays them. | Personal connectors (Granola), an agent-owned cron schedule, and why that schedule cannot live on the app: a cron invocation has no caller, so `agents.start()` from cron is a 409. |
+| [`agents/proposals`](https://github.com/Railcode-HQ/railcode-examples/tree/main/agents/proposals) | An agent that watches Granola meetings on a cron and drafts an editable `.docx` proposal, paired with an app that displays them. | A connector the owner linked (Granola) named under `tools.connectors`, an agent-owned cron schedule, and why that schedule cannot live on the app: a cron invocation has no caller, so `agents.start()` from cron is a 409. |
 
 They pair an app with a managed agent because agents can't own files or storage directly — they
 work through an app they have data access to. Both companion apps are **apps v2** (a static
@@ -177,7 +178,8 @@ authoring behavior:
 - Rename each `agents/<name>/` directory and the manifest's `name`, so the copy doesn't collide
   with an agent that already exists in the org.
 - Point `tools.app_data` / `app_files` / `app_data_write` at the renamed companion app slug, and
-  keep `visibility` right for the tools declared (`personal_connectors` needs `personal`).
+  re-check every name under `tools.connectors` against `railcode connector list` — the example's
+  rows (`granola-…`) belong to someone else's org.
 - Cut every tool the new agent doesn't need — a copied manifest carries the example's authority,
   not the narrowest set for this job — and re-size `limits` for the new workload.
 - Rewrite the `system` prompt and `input_schema` for the new contract; the example's prompt
@@ -215,26 +217,26 @@ Railcode integration plane available to the signed-in user:
 ```bash
 railcode db list                       # database/data-source connections
 railcode query list                    # admin-published saved queries over those sources
-railcode connector list                # org service connectors
-railcode personal-connectors list      # per-user bundled and custom toolkits + connection status
+railcode connector list                # connectors you can reach: org-managed, yours, shared with you
+railcode connector catalog             # providers that could be linked, if no row exists yet
 ```
 
-Inspect any plausible match before authoring (`railcode connector docs <name>` and/or
-`railcode personal-connectors tools <toolkit>`), and copy exact connector names, endpoints,
-tool slugs, and schemas rather than guessing. Prefer saved queries over `adhoc_sql`. A bundled
-personal toolkit requires `visibility: personal` and runs as the agent owner; an org agent
-cannot declare personal connectors. If you cannot authenticate or reach the instance, ask what
-is configured and give the user these discovery commands rather than treating the failed check
-as evidence that no integration exists.
+Inspect any plausible match before authoring (`railcode connector docs <name>` for http rows,
+`railcode connector tools <name>` for mcp rows and linked accounts), and copy exact connector
+names, endpoints, tool slugs, and schemas rather than guessing. Prefer saved queries over
+`adhoc_sql`. **Read the `mode` column**: a `per-user` row cannot be named by an agent at all (the
+save is rejected — it runs on a caller's account and an agent has none); a `shared` row with an
+owner can be named only if the agent's creator holds it (owns it, or it was shared with them or
+the org). If you cannot authenticate or reach the instance, ask what is configured and give the
+user these discovery commands rather than treating the failed check as evidence that no
+integration exists.
 
 If no suitable source exists, explain the gap and offer concrete paths: have an admin connect a
-database and publish a saved query; enable or create an org service connector for a shared
-credential/API; or connect a bundled personal toolkit and make the agent personal. Also mention
-a remote custom MCP personal connector when X provides one, but state the boundary clearly:
-`custom_<slug>` connectors are callable by Railcode **apps only**, not managed-agent manifests.
-For an agent workflow, offer a companion app that calls the custom MCP as its viewer, an
-admin-configured service connector, or importing the needed data into a connected database/app
-store the agent can read. If X exposes none of those supported surfaces, say Railcode cannot
+database and publish a saved query; have an admin create an org-managed connector for a shared
+credential/API; have the person link their own account (`railcode connector link <provider>`)
+or add X's remote MCP server by URL (`railcode connector add-mcp <name> <url>`) — both become
+rows the agent names under `tools.connectors`; or import the needed data into a connected
+database/app store the agent can read. If X exposes none of those surfaces, say Railcode cannot
 connect to it directly and ask which alternative source the user wants to use.
 
 - the job it owns and the output expected;
@@ -249,8 +251,9 @@ connect to it directly and ask which alternative source the user wants to use.
 - **its visibility** — `org` (the default: shared, invokable by anyone with an invoke
   grant, managed by its creator or any admin) or `personal` (owned and invoked by its
   creator alone, admins included — no grant makes it shared, and it cannot later become
-  `org`). Pick `personal` only when the agent needs `tools.personal_connectors` (its
-  owner's own Gmail/Slack/etc.) or should otherwise be usable by exactly one person.
+  `org`). Pick `personal` when the agent should be usable by exactly one person — typically
+  because it acts through a connector only its creator holds (their own Gmail, Slack, Granola)
+  and nobody else should be able to trigger that.
 
 Use the narrowest useful tool set and explicit instructions — but size `limits` the other
 way: match the token budget to the task and **leave headroom**. Document-editing and
@@ -496,9 +499,10 @@ in `$create-railcode-app` → "Limitations"):
   data-change or inbound-webhook triggers.
 - **Invoke other agents.** There is no agent→agent tool; compose pipelines through an app
   or an external caller instead.
-- **Use custom MCP personal connectors.** A user-added by-URL MCP connector
-  (`custom_<slug>`) works for its owner and for apps, but is **not declarable in an agent
-  manifest** — ratification checks the static registry. Bundled toolkits only.
+- **Use per-user connectors.** A per-user connector (one name, each member's own account)
+  runs on the *caller's* account, and an agent has no caller: a manifest naming one is
+  rejected at save time and the runner refuses it at run time. Name a connector the creator
+  owns (or an org-managed one) instead; a by-URL MCP row (`railcode connector add-mcp`) is fine.
 - **Keep sandbox state.** The sandbox filesystem is per-run; anything worth keeping must
   be published (`publish_artifact_to_app`) or written to KV before the run ends.
 

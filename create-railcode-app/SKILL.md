@@ -1,7 +1,7 @@
 ---
 name: create-railcode-app
 description: Build, modify, debug, test, and deploy Railcode apps end-to-end. Use when creating a Railcode app from an idea, scaffolding with the Railcode CLI, writing a backend worker with @railcode/sdk, wiring a frontend to worker routes, declaring app authority, testing with railcode dev, migrating a legacy v1 app to apps v2, maintaining an existing v1 browser-SDK app, adding to a v1 app something it cannot do (a secret, a backend, a cron, authorization that must hold), or deploying. Do not use for managed-agent authoring or general organization administration.
-version: 0.3.6
+version: 0.3.7
 ---
 
 # Create Railcode App
@@ -19,14 +19,20 @@ npm view railcode version
 ```
 
 If the skill changes, re-read this file from the top. If npm is unreachable, say so and do not
-claim the guidance is current. This version was written against **CLI 0.3.0** and
-**`@railcode/sdk` 0.4.0** (both confirmed published).
+claim the guidance is current. This version was written against **CLI 0.3.9** and
+**`@railcode/sdk` 0.5.0** (both confirmed published 2026-10-11).
 
 **0.3.0 is the floor this document assumes.** It is where personal connectors were folded into
 `railcode connector` (see [Breaking Changes](#breaking-changes)). On an older binary the
 `connector link` / `add-mcp` / `share` subcommands do not exist, and `railcode
 personal-connectors` still does — if you see that command work, you are on a CLI this guidance
 does not describe. Reinstall before following anything below.
+
+**Per-user connectors need CLI 0.3.9 and `@railcode/sdk` 0.5.0.** On an older SDK
+`ApiError.connectionRequired` is `undefined` and `connector().connection()` does not exist; on an
+older CLI `railcode connector connect` / `status` / `link --per-user` are unknown commands. The
+platform side is live regardless, so an app on SDK 0.4.0 still receives the 409 — it just has
+to parse `detail.code` by hand. Prefer upgrading.
 
 Two older floors still worth recognising: `secrets` and `migrate` exist but are never
 dispatched on **0.2.2** (they die with an unknown-command error however correct the
@@ -74,6 +80,23 @@ first. **When a user reports that something which used to work now fails, read t
 debugging** — the platform's own error messages are written to be the fix instructions, and
 the entry below tells you how to act on them. Add an entry here whenever a change ships that
 an existing app cannot survive untouched.
+
+### Per-user connectors — CLI 0.3.9, `@railcode/sdk` 0.5.0 (not breaking, but reverses two rules)
+
+A connector can now be **per-user**: one name, no credential of its own, and each member connects
+their own account under it. `connector("granola").call(…)` is unchanged, but it can now refuse
+with **409 `connection_required`** when the caller has not connected, or has not approved this app.
+Two statements elsewhere in this skill became conditional the day this shipped:
+
+- *"Do not build a connect flow."* Still true for shared and owned connectors. For a per-user one
+  the app **does** forward the browser — to the platform's connect page at
+  `err.connectionRequired.connectUrl` (plus `&return_to=`), never to an OAuth URL of its own.
+- *"Crons now work."* For shared and owned connectors. A per-user connector has no caller under
+  cron and refuses with `connector_needs_user`.
+
+Nothing existing breaks: a shared or owned row behaves exactly as before. See
+[worker-sdk.md → Per-user connectors](references/worker-sdk.md#per-user-connectors) and
+[cli-workflow.md → Per-user connectors](references/cli-workflow.md#per-user-connectors).
 
 ### Personal connectors are gone — CLI 0.3.0, `@railcode/sdk` 0.4.0
 
@@ -265,6 +288,7 @@ what is available; the discovery commands are in Build step 1.
 |---|---|
 | "Show company metrics/orders/customers from our database" | **Saved query** via `query()` (default); data connection + `data().runSQL()` only when explicitly requested |
 | "Let someone use their own Gmail, Slack, or other account" | **Connector** they link and own (`railcode connector link gmail`), named under `connectors:`. Owned rows are `restricted` until shared — see [connectors](references/cli-workflow.md) |
+| "Everyone who uses the app should act as **themselves** — their own meetings, inbox, calendar" | A **per-user connector** (`railcode connector link granola --per-user`): one name, each member runs `railcode connector connect granola` (or the platform's connect page). Same manifest and call site; the worker handles `ApiError.connectionRequired` by sending the browser to `connectUrl`. OAuth providers only; no crons — see [per-user connectors](references/worker-sdk.md#per-user-connectors) |
 | "Connect an account for a product Railcode does not bundle" | `railcode connector add-mcp <name> <https-url>` — a remote MCP server as a connector you own |
 | "Use our team's shared Stripe, CRM, or other SaaS account" | An **org-managed connector** (`access_mode: organization`) via `connector().fetch()` or `connector().call()`; an admin owns the credential |
 | "Store app settings, drafts, approvals, or lightweight records" | `db` — one flat store; partitioning and access policy are **your worker's code** |
@@ -546,8 +570,8 @@ quietly build an approximation that can't work.
 | A cron invocation has **no caller** | `ctx.user` is `null`, `ctx.trigger` is `"cron"`. Every limit below follows from this one fact |
 | Cron cannot start an agent run | A run is owned by `(app, caller)`, so a cron-started run would have no owner — `409`. Give the agent **its own schedule** instead |
 | Cron cannot **poll** an agent run either | `agents.get()` matches the same `(app, caller)` pair, so a cron can't read back a run an http invocation started — also `409` |
-| Personal connectors don't compose with cron | Every op acts as `ctx.user`; cron has none, so all of `list`/`connect`/`tools`/`call` refuse with `409` |
-| For scheduled work on a personal account, use a **personal agent** | Give it the connector and its own `railcode agent schedule`; it writes to its owner's user scope and your worker reads that with `db.scoped(ownerUuid)`. Its identity is fixed at `created_by_id`, so it fails loudly if the owner leaves rather than acting as someone else |
+| **Per-user** connectors don't compose with cron | A per-user connector runs on the *caller's* account; cron has none, so `fetch`/`tools`/`call` refuse with `409` `connector_needs_user` (also `connection()` / `checkHealth()`) |
+| For scheduled work on one person's account, use a connector they **own** | An owned row's credential belongs to the row, so a cron route can call it (`connectors: { "granola-jp": ["*"] }`); only the owner (and whoever they share with) ratifies it. A managed agent on its own `railcode agent schedule` is the alternative — agents cannot name per-user connectors either |
 | Your own authz code must handle a null caller | A shared route reading `ctx.user.roles` throws under cron — or returns everything. The flat store enforces nothing. Guard with `if (!ctx.user)` |
 | Everything else still works under cron | `db` (incl. `db.scoped`), `files`, `sql`, `query`, `llm`, `email`, `appUsers()`, `secrets`, egress, and **org/service connectors** — a v2 worker's authority is its `run_as: app` manifest, not the caller |
 | Cron caps | 5 schedules per app, 1-minute minimum. A schedule pauses with a visible reason if the current deploy has no worker |

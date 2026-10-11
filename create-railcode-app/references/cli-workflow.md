@@ -11,7 +11,7 @@
 - Validate the app authority manifest
 
 Use this reference for exact Railcode CLI behavior relevant to building, testing, and
-deploying an app on the **multi-tenant** Railcode platform. Written against **CLI 0.3.0**. For managed agents use
+deploying an app on the **multi-tenant** Railcode platform. Written against **CLI 0.3.9**. For managed agents use
 `$create-railcode-agent`; for organization administration use `$manage-railcode-org`.
 
 The CLI ships as the npm package **`railcode`**. The app-building subset is:
@@ -481,6 +481,40 @@ railcode connector call gmail-jp send_email --args '{"to":"a@b.com","subject":"h
 - Two kinds behave differently: **http** rows are a method/path proxy (`connector fetch`), **mcp**
   rows are tools called by name (`connector tools` / `call`). Linked providers such as Gmail
   expose tools as well.
+
+### Per-user connectors
+
+**CLI 0.3.9.** A per-user connector is one name under which **each member connects their own
+account**; it holds no credential itself, and an app calling it runs on the caller's account
+(after they approve that app once). OAuth providers only — `catalog` shows `oauth` / `mcp_oauth`.
+
+```bash
+railcode connector link granola --per-user [--name <n>]   # create the definition (org-wide, you own it)
+railcode connector connect granola                        # connect YOUR account (prints the URL, waits)
+railcode connector connect granola --no-wait              # print the URL and return
+railcode connector status granola                         # your link: not connected | linking | connected as …
+railcode connector status granola --app meetings          # + what that app declares and whether you approved it
+railcode connector disconnect granola                     # remove your account and every app approval
+```
+
+- `connector list` grows a **`mode`** column (`per-user` / `shared`) when any per-user row exists;
+  on a per-user row `auth` is how members sign in and `account` is *your* link, not a shared one.
+- **`link <provider>` refuses when a per-user definition for that provider exists** and points
+  you at `connect` — a separate row of your own would not make the apps built on the definition
+  work, and on providers that rotate refresh tokens the two grants can invalidate each other.
+  `--own` links the separate row anyway.
+- **Approval has no CLI command.** The member approves an app on the platform's connect page,
+  where they see the operations the app declares. The app gets there through
+  `ApiError.connectionRequired.connectUrl` — see [worker-sdk.md](worker-sdk.md#per-user-connectors).
+- `connect` on a connector you already connected says so instead of re-running OAuth. A
+  **shared** connector has no connection to make: `connect` on one answers 404.
+- Under **`railcode dev`**, `connector(name).connection()` / `checkHealth()` forward to the
+  **deployed** app's ratified manifest, so deploy once before testing them; the dev proxy answers
+  409 "Deploy this app once" otherwise. Ordinary dev connector calls keep using your own member
+  authority — and your own link.
+- Admins can disable or delete a definition (which removes every member's link) but cannot edit
+  its host, headers or body logging, cannot see whose accounts are linked, and cannot connect on
+  someone's behalf; impersonated sessions are refused on every write.
 
 ## LLM Gateway
 
