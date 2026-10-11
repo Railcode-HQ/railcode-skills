@@ -1,7 +1,7 @@
 ---
 name: create-railcode-agent
 description: Build, test, publish, invoke, schedule, and update Railcode managed agents with the Railcode CLI. Use when creating an organization or personal managed agent, editing an agent manifest (JSON or YAML), running a draft or saved agent, investigating a run, managing its cron schedule, running it from Slack (@Railcode $agent), pairing it with a companion app, processing files in its sandbox, or acting through a connector one person owns (their Gmail, Slack, Granola, ...). Do not use for static Railcode apps, in-app LLM tool loops (llm.generate({ tools }) — see create-railcode-app), or general organization administration.
-version: 0.1.25
+version: 0.1.26
 ---
 
 # Create Railcode Agent
