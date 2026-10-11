@@ -19,12 +19,12 @@ The CLI ships as the npm package **`railcode`**. The app-building subset is:
 ```
 railcode login [--api-url <url>] [--paste|--no-browser]   Sign in and mint a personal API token
 railcode login --setup-token <token>          Non-interactive onboarding login (one-time setup token)
-railcode init <app> [dir] [--template hono+vite|hono+static|tanstack|next|static]   Scaffold an app
+railcode init <app> [dir] [--template hono+vite|hono+static|tanstack|next|static] [--force]   Scaffold an app
 railcode dev [--port <n>] [--reset]           Run the frontend AND the worker locally
 railcode deploy [--private] [--no-source] [--force]   Build + deploy the static tree and worker
 railcode pull [<deploy>] [--app <slug>] [--dir <path>] [--force]   Download a deploy's stored source
-railcode secrets <set|import|ls|rm> ...       Per-app worker secrets — write-only (apps v2)
-railcode logs app [<invocation_id>] [--app <slug>] [--follow]   Worker invocations + traces (apps v2)
+railcode secrets <set|import|ls|rm> ... [--app <slug|uuid>]   Per-app worker secrets — write-only (apps v2)
+railcode logs app [<invocation_id>] [--app <slug>] [--limit <n>] [--follow]   Worker invocations + traces (apps v2)
 railcode migrate [--app <slug>] [--yes]       Move a v1 app to apps v2 (ONE-WAY)
 railcode manifest <validate|show> ...         Validate manifest.yaml / show the ratified authority
 railcode design-system [get|set] ...          Print the org's design-system guidance
@@ -40,8 +40,8 @@ railcode apps show <app> [--json]             App details, incl. your rights and
 railcode apps access <app>                    Inspect the access policy
 railcode apps set-access <app> ...            Set mode/members/editors (manage rights)
 railcode apps add-editor|remove-editor <app> <email|uuid>   Grant/revoke co-deploy rights
-railcode apps add-viewer|remove-viewer <app> <email|uuid>   Grant/revoke view rights (restricted only)
-railcode ci github [--repo <owner/name>] [--branch <name>]   Deploy from GitHub Actions
+railcode apps add-viewer|remove-viewer <app> <email|uuid>   Grant/revoke view rights (restricted, or an external user)
+railcode ci github [--repo <owner/name>] [--branch <name>] [--yes]   Deploy from GitHub Actions
 railcode token <create|list|revoke> ...       App-scoped deploy tokens for CI (edit tier)
 railcode --version
 railcode --help
@@ -51,16 +51,6 @@ Organization-level commands are intentionally excluded. Load `$manage-railcode-o
 task is to administer apps, members, roles/grants, connections, service connectors, saved
 queries, analytics, or logs.
 
-The CLI keeps itself current. On an **interactive terminal** it checks npm at most once every
-6 hours, and installs any newer release **within the current major** with whatever global
-package manager it detects (npm/pnpm/yarn/bun), announcing it on stderr so `--json` output
-stays clean. It never crosses a major version, never blocks a command on a registry hiccup,
-and is **skipped in non-interactive/CI runs** — which is every agent-driven session, so keep
-upgrading explicitly with `npm install -g railcode@latest`. Overrides: `RAILCODE_NO_UPDATE=1`
-(off), `RAILCODE_UPDATE_DRY_RUN=1` (print the install command, forces the check off-TTY),
-`RAILCODE_REGISTRY_URL` (alternate registry). The throttle timestamp lives in
-`~/.railcode/update-check.json`.
-
 ## Install The CLI
 
 Install the CLI globally:
@@ -69,18 +59,18 @@ Install the CLI globally:
 npm install -g railcode@latest        # or: pnpm add -g railcode@latest
 ```
 
-API-URL resolution for every command: `--api-url` flag > `RAILCODE_API_URL` env > saved
-config > `https://api.railcode.app`. Set
-`RAILCODE_API_TOKEN` to override the saved token in CI. On a `401`, the saved token is
-cleared and you're told to `railcode login` again.
+Auto-update runs only on an interactive terminal (at most every 6 hours, never across a
+major); off-TTY — every agent-driven session — run `npm install -g railcode@latest`
+yourself. `RAILCODE_NO_UPDATE=1` disables it.
 
-A CI runner has **no `~/.railcode/config.json` at all**, so the token alone is not
-enough there — the org uuid has nowhere to come from either. Set all three:
-`RAILCODE_API_TOKEN`, `RAILCODE_API_URL` and `RAILCODE_ORG_UUID`. Without the last
-one the command stops at *"No organization on file"* despite a perfectly valid
-token. Only the token is a secret; the other two are identifiers. **`RAILCODE_ORG_UUID`
-needs CLI 0.1.36+** — an older binary ignores it and fails in exactly that way. See
-[Deploy From CI](#deploy-from-ci-github-actions).
+**How every command resolves its target.** API URL: `--api-url` flag > `RAILCODE_API_URL`
+env > saved config > `https://api.railcode.app`. Token: `RAILCODE_API_TOKEN` overrides the
+saved one; on a `401` the saved token is cleared and you're told to `railcode login` again.
+A CI runner has **no `~/.railcode/config.json` at all**, so the token alone is not enough
+there — the org uuid has nowhere to come from either. Set all three: `RAILCODE_API_TOKEN`,
+`RAILCODE_API_URL` and `RAILCODE_ORG_UUID`. Without the last one the command stops at
+*"No organization on file"* despite a perfectly valid token. Only the token is a secret;
+the other two are identifiers. See [Deploy From CI](#deploy-from-ci-github-actions).
 
 ## Log In
 
@@ -88,26 +78,21 @@ needs CLI 0.1.36+** — an older binary ignores it and fails in exactly that way
 railcode login [--api-url <url>] [--paste|--no-browser]
 ```
 
-Login is **browser-based** (not an email/password prompt). The API URL resolves
-non-interactively —
-`--api-url` > `RAILCODE_API_URL` > saved config > the default
-`https://api.railcode.app`. The CLI:
+Login is **browser-based** (not an email/password prompt). The CLI:
 
 1. Starts a localhost HTTP callback, prints the authorization link, and **auto-opens your
-   default browser** to it; paste the printed URL if it doesn't open.
+   default browser** to it; paste the printed URL if it doesn't open. The authorize page can
+   also show a one-time code with a copy button, and the CLI accepts either the localhost
+   callback or a pasted code — whichever happens first. `--paste` (or `--no-browser`) skips
+   the localhost server entirely, for SSH/headless machines.
 2. The browser does normal dashboard auth and approves the CLI.
 3. The CLI exchanges the one-time code for a long-lived, revocable **personal API token**,
    resolves your organization, and saves everything to `~/.railcode/config.json`.
 
-There is also a **paste-the-code fallback**: the authorize page can
-display a one-time code with a copy button, and the CLI accepts either the localhost
-callback or a pasted code — whichever happens first. `--paste` (or `--no-browser`) skips
-the localhost server entirely, for SSH/headless machines.
-
-Browser login needs a TTY. In non-interactive environments set `RAILCODE_API_TOKEN`
-instead — plus `RAILCODE_ORG_UUID` when there is no saved config to read the org from,
-as on a CI runner. If you have no organization yet, finish onboarding in the dashboard,
-then run `railcode login` again so the org is saved (deploy needs it).
+Browser login needs a TTY. In non-interactive environments set the env vars listed under
+[Install The CLI](#install-the-cli) instead. If you have no organization yet, finish
+onboarding in the dashboard, then run `railcode login` again so the org is saved (deploy
+needs it).
 
 `railcode login --setup-token <rc_setup_...>` is the no-TTY, no-browser onboarding path: a
 **one-time, ~10-minute** setup token (minted by the dashboard's copied CLI prompt) is
@@ -138,10 +123,11 @@ through the `@railcode/next` dev dependency, which the template installs):
 | `next` | Next.js App Router, rendered by the worker | the Next app itself: Server Components, Server Actions, Route Handlers | `app/`; every path reaches the worker. See [Next.js and worker-first routing](#nextjs-and-worker-first-routing) |
 | `static` | static tree | **none** | pure hosting; no server code |
 
-Each worker template scaffolds a small **platform tour** — identity (`ctx.user` + `appUsers`), a
-todo list on `db`, files, and the read-only org surfaces — over a frontend that only fetches the
-worker's `/api` routes. Read it, then delete it. Treat it as functional scaffolding, not a style
-guide.
+The `hono+static` and `tanstack` templates scaffold a small **platform tour** — identity
+(`ctx.user` + `appUsers`), a todo list on `db`, files, and the read-only org surfaces — over a
+frontend that only fetches the worker's `/api` routes; the default `hono+vite` scaffolds the
+onboarding welcome app instead. Read it, then delete it. Treat it as functional scaffolding,
+not a style guide.
 
 `railcode.json` keys:
 
@@ -160,8 +146,7 @@ output. **Never add `"server"` to a generation-1 app** — the deploy is refused
 ### Next.js and worker-first routing
 
 By default only `/api/*` and `/_serverFn/*` reach the worker; every other path is a static file
-or the root `index.html`. CLI 0.3.8 adds a fifth template and a second routing mode for apps
-whose worker renders the pages:
+or the root `index.html`. Two things change that, for apps whose worker renders the pages:
 
 - **`railcode init <app> --template next`** scaffolds a Next.js App Router app: `"type": "next"`,
   built by the `@railcode/next` dev dependency, served at its normal URLs. Server Components,
@@ -170,60 +155,31 @@ whose worker renders the pages:
 - **`"routes": "all"`** in `railcode.json` is for a bring-your-own stack whose worker renders
   pages. A `GET` or `HEAD` for a file in `dist` is still served as that file; every other
   request, on any method, goes to the worker, and there is no `index.html` fallback (a root
-  `index.html` is no longer required). `"type": "next"` implies it. Reverting a deploy restores
+  `index.html` is not required). `"type": "next"` implies it. Reverting a deploy restores
   its routing with it.
 
 Signed-out requests are redirected to login before they reach the worker in both modes.
 
-**Rules for a `next` app.** They are easy to break and each one fails badly:
-
-- `package.json` `build` stays the plain `next build`. The Railcode build calls that script, so
-  pointing it back at the Railcode build starts a build inside every build.
-- `next` stays on `~16.3.8`. Next 16.4 builds and then fails on every request. A `^16` range
-  installs 16.4, so check `node_modules/next/package.json`.
-- A page that calls the SDK renders per request: `await connection()` (from `next/server`)
-  before the first SDK call, or `export const dynamic = "force-dynamic"`. The SDK needs a
-  request and there is none while `next build` prerenders.
-- Secrets go in `railcode secrets set`, not `.env*`. The adapter embeds every env file's values
-  in the worker bundle; the build warns by key name about each non-`NEXT_PUBLIC_` value.
-- `images: { unoptimized: true }` stays in `next.config.ts`. No `next/og`, no `.wasm`, no timed
-  ISR (`export const revalidate = N` keeps build-time content until the next deploy; use
-  `"use cache"` + `cacheLife`, which is stored in the app's own store).
-- Avoid `proxy.ts` / middleware: it adds about 3 MB to the worker.
-- `railcode dev` runs Next in Node and the deployed app runs in the worker runtime, so a
-  Node-only dependency works locally and fails when deployed. Deploy early.
-
 The `migrate-to-railcode` skill's Next.js guide has the full porting rules, the gotchas table
 and what has been proven; they apply to a new app as much as to a migrated one.
 
-**If `init` rejects `--template next`, or a deploy is refused.** Both features need a CLI and a
-server that have them, and a stale binary or a self-hosted server that is behind may not:
+**If a `routes: all` or `type: next` deploy is refused**, check the server:
 
 ```bash
-railcode --help | grep -- "--template"     # 1. does the template list include "next"?
-npm view @railcode/next version            # 2. can npm install the preset? (Next.js only)
-curl -s <api-url>/api/config               # 3. is "worker_routes" in deploy_capabilities?
+curl -s <api-url>/api/config               # is "worker_routes" in deploy_capabilities?
 ```
 
 `<api-url>` is the server the CLI is logged in to (`https://api.railcode.app` unless the user
-logged in with `--api-url`); `api.railcode.app` has `worker_routes`. If 1 fails, update the CLI
-(`npm install -g railcode@latest`) and look again; both features need CLI 0.3.8 or later. If
-3 fails, the server has to be upgraded: the CLI refuses a `routes: all` or `type: next` deploy
-against a server without `worker_routes`, so a wrong guess fails at deploy rather than shipping
-a broken app. Until then, Next.js still runs through the fallback in the `migrate-to-railcode`
-skill (the app mounted under `/api`).
+logged in with `--api-url`); `api.railcode.app` has `worker_routes`. The CLI refuses a
+`routes: all` or `type: next` deploy against a server without it, so a wrong guess fails at
+deploy rather than shipping a broken app. Until the server is upgraded, Next.js still runs
+through the fallback in the `migrate-to-railcode` skill (the app mounted under `/api`).
 
 ### A minimum-CLI floor gates NEW apps
 
-Creating an app requires a current CLI (default floor **0.2.0**); a stale CLI would scaffold
-v1-shaped bundles and is refused. **Deploys to existing apps are never gated** — a v1 app keeps
-deploying from any CLI.
-
-### `secrets` and `migrate` need CLI 0.2.3
-
-Both commands ship in 0.2.2 but are never routed to, so any `railcode secrets ...` or
-`railcode migrate ...` invocation fails as an unknown command. Fixed in 0.2.3. An unknown-command
-error on either one means the CLI is stale, not that the syntax below is wrong.
+Creating an app requires a CLI at or above the floor the server enforces
+(`APPS_MIN_CLI_VERSION_FOR_CREATE`). **Deploys to existing apps are never gated** — a v1 app
+keeps deploying from any CLI.
 
 ## Local Dev
 
@@ -298,7 +254,7 @@ error, and **every governed operation with its verdict**, so a refusal appears a
 the resource name instead of a silent failure.
 
 `invocation_id` joins the gate record, the logs, and every data-plane audit row — one request
-reads as one trace. Retention is short (about 14 days).
+reads as one trace. Invocation records and logs are retained indefinitely for now.
 
 ## The Migration Gate (v1 → v2)
 
@@ -340,7 +296,7 @@ cleanly into an agent). Needs a logged-in CLI; resolves the server like every ot
 Returns empty when no admin has configured a design system for the org. `railcode
 design-system get` is the explicit spelling of the same read.
 
-An admin with **design-system manage** can also replace the guidance (new in CLI 0.1.31):
+An admin with **design-system manage** can also replace the guidance:
 
 ```bash
 railcode design-system set --file brand.md          # from a file
@@ -366,8 +322,8 @@ railcode db query "select * from orders where total > $1" --params '[100]'
 railcode db query --file report.sql --connection analytics
 ```
 
-`railcode db` inspects the org's **data connectors** (admin-configured Postgres, BigQuery, or
-Turso) and runs ad-hoc read-only SQL from the terminal — the same connectors and SQL the
+`railcode db` inspects the org's **data connectors** (admin-configured Postgres, BigQuery,
+Turso, or MotherDuck) and runs ad-hoc read-only SQL from the terminal — the same connectors and SQL the
 in-app `dataConnectors()` / `data().runSQL()` use. Data connectors are **org-scoped**, so these
 one-shot commands **work straight after `railcode login`** — **no app and no `railcode.json`
 required**. They use your login token and run from any directory.
@@ -375,7 +331,7 @@ required**. They use your login token and run from any directory.
 - `railcode db list` (aliases `ls`, `connections`) — prints each connector's `name` +
   `engine`; `--json` prints the raw array.
 - `railcode db query "<sql>"` (alias `sql`) — runs the SQL and prints a table + row count.
-  `--connection <name>` (default `default`), `--engine <postgres|bigquery|turso>` (inferred
+  `--connection <name>` (default `default`), `--engine <postgres|bigquery|turso|motherduck>` (inferred
   from the connector list when omitted), `--params '<json-array>'` binds positional
   placeholders (`$1, $2, …` on Postgres; `?` on BigQuery/Turso), `--file <path>` reads SQL
   from a file (mutually exclusive with the positional arg), `--json` prints the raw
@@ -436,15 +392,16 @@ control only method/path/body. Service connectors are **org-scoped**, so — lik
 these commands **work straight after `railcode login`** with **no app or `railcode.json`
 required**.
 
-- `railcode connector list` (aliases `ls`, `connectors`) — prints `name`, `auth_type`, and
-  `allowed_methods` (plus a `description` column, and a `docs` column reading `api` /
-  `openapi` for the connectors that expose documentation); `--json` for the raw array.
+- `railcode connector list` (aliases `ls`, `connectors`) — prints `name`, `kind`, `tools`
+  (whether the row exposes callable tools), `auth`, `owner`, `access`, and `account`; a `mode`
+  column (`per-user` / `shared`) appears when any per-user row exists, and a `status` column
+  when a row is not yet approved (an OAuth link still in flight). `--json` for the raw array.
+  To see what documentation a connector has, run `connector docs <name>`.
 - `railcode connector docs <name>` (alias `doc`) — prints one connector's documentation
   bundle so you know how to call it: usage instructions, the API-docs link (or inline text),
   and the OpenAPI spec (link or inline) when the admin configured them. `--openapi` prints
   only the spec (inline text if present, else its URL; exits non-zero when there is none);
-  `--json` for the raw docs object. Use the `docs` column from `connector list` to see which
-  connectors have anything to show.
+  `--json` for the raw docs object.
 - `railcode connector fetch <path>` (alias `request`) — proxies one HTTP call.
   `--connector <name>` (required), `--method <verb>` (default `GET`; must be allowed by the
   connector or the server returns 405), `--body <string>` / `--file <path>` (mutually
@@ -453,14 +410,13 @@ required**.
 
 ## Link A Connector You Own
 
-**`railcode personal-connectors` (and its `pc` alias) was removed in CLI 0.3.0** — it exits
-"Unknown command". Personal connectors were folded into `railcode connector`: one command for a
+There is no separate `personal-connectors` command: `railcode connector` is one command for a
 shared team credential and for an account you link yourself.
 
 ```bash
 railcode connector catalog                     # providers you can link + their connect methods
 railcode connector link gmail                  # link your own account; you own the row
-railcode connector add-mcp notion https://mcp.notion.com/mcp   # any remote MCP server
+railcode connector add-mcp notion https://mcp.notion.com/mcp   # any remote MCP server (alias: mcp)
 railcode connector list                        # what you can see: owned, shared, org-mode
 railcode connector tools gmail-jp              # callable tools + input schemas
 railcode connector call gmail-jp send_email --args '{"to":"a@b.com","subject":"hi"}'
@@ -469,9 +425,10 @@ railcode connector call gmail-jp send_email --args '{"to":"a@b.com","subject":"h
 - **You own what you link, and it starts `restricted`** — visible to you, admins, and anyone you
   `share` it with. `railcode connector access <name> organization` opens it to the org;
   `railcode connector share <name> --user <email>` or `--role <name>` grants it narrowly.
-- **The name is not the provider id.** Two people linking the same provider, or a name already
-  taken, produces a suffix (`gmail-jp`, `slack-harshsharma`). Always read the name from
-  `connector list` before writing it into a manifest.
+- **The name is not the provider id.** The default is `<provider>-<your email's local part>`
+  (`gmail-jp`, `slack-harshsharma`); when that is taken the server counts up (`gmail-jp-2`,
+  `-3`, …). A name you pass with `--name` that is already taken is a `409`. Always read the
+  name from `connector list` before writing it into a manifest.
 - `link` waits for the OAuth round trip by default; `--no-wait` prints the URL and returns.
   `relink <name>` re-authorizes an expired row without disturbing what names it.
 - `call` runs a tool **as you, under your grants** — an identity op with no app manifest bound,
@@ -484,15 +441,15 @@ railcode connector call gmail-jp send_email --args '{"to":"a@b.com","subject":"h
 
 ### Per-user connectors
 
-**CLI 0.3.9.** A per-user connector is one name under which **each member connects their own
+A per-user connector is one name under which **each member connects their own
 account**; it holds no credential itself, and an app calling it runs on the caller's account
 (after they approve that app once). OAuth providers only — `catalog` shows `oauth` / `mcp_oauth`.
 
 ```bash
-railcode connector link granola --per-user [--name <n>]   # create the definition (org-wide, you own it)
+railcode connector link granola --per-user [--name <n>] [--method oauth|mcp_oauth]   # create the definition (org-wide, you own it)
 railcode connector connect granola                        # connect YOUR account (prints the URL, waits)
 railcode connector connect granola --no-wait              # print the URL and return
-railcode connector status granola                         # your link: not connected | linking | connected as …
+railcode connector status granola                         # your link: not connected | linking | connected as … (alias: connection)
 railcode connector status granola --app meetings          # + what that app declares and whether you approved it
 railcode connector disconnect granola                     # remove your account and every app approval
 ```
@@ -522,6 +479,7 @@ railcode connector disconnect granola                     # remove your account 
 railcode llm providers            # configured providers, each with its models
 railcode llm models               # flat list of every callable model
 railcode llm providers --json     # raw provider array
+railcode llm default <model>      # set the model used when a call names none
 ```
 
 `railcode llm` shows the org's LLM gateway exactly as apps see it — the same catalog the
@@ -554,11 +512,12 @@ Deploy behavior:
 
 - Requires a `railcode.json` with an `"app"` slug in the current directory.
 - Resolves the output directory, then runs a build command when needed (see resolution
-  below), and uploads every file in the output dir (which must contain a root `index.html`)
-  to the selected organization.
-- Skips `.git`, `node_modules`, `.DS_Store`, and (at the app root) `railcode.json`,
-  `package.json`, lockfiles (`package-lock.json` / `pnpm-lock.yaml` / `yarn.lock` /
-  `bun.lockb`), `manifest.yaml`.
+  below), and uploads every file in the output dir (which must contain a root `index.html`
+  unless `routes` is `all`) to the selected organization.
+- Skips `.git`, `node_modules`, `.DS_Store` and `.railcode` at any depth, and (at the app
+  root) `.gitignore`, `railcode.json`, `package.json`, and lockfiles (`package-lock.json` /
+  `pnpm-lock.yaml` / `yarn.lock` / `bun.lockb` / `bun.lock`). `manifest.yaml` is **not**
+  skipped — it is copied into the bundle root.
 - The app is **created-or-resolved by slug in your saved org**. On the **first successful**
   deploy for a slug the server creates the app (default **`organization`** access); a failed
   first deploy leaves no phantom not-deployed app behind.
@@ -570,57 +529,45 @@ Deploy behavior:
 - Uses the saved API token (or `RAILCODE_API_TOKEN`); clears the token and asks you to log in
   again on `401`.
 - Also uploads the **project source** alongside the built files, so a later `railcode pull`
-  can bring it back (new in CLI 0.1.32). The source respects the project's `.gitignore`, plus
-  a built-in exclude list (broadened in **CLI 0.1.34**, matched by exact name at any depth)
-  and the resolved build-output dir. `--no-source` skips it. The CLI
-  mirrors the server's default caps — 20 MB of source in total, 25 MB per file, 1000 files —
-  so an oversized tree fails **before** the upload starts. An instance may configure lower
-  values, in which case the server rejects what the CLI allowed.
-  - The exclude list covers vendored deps and build output (`node_modules`, `.venv`, `venv`,
-    `dist`, `build`), VCS internals (`.git`, `.hg`, `.svn`), framework/tool caches (`.vite`,
-    `.next`, `.nuxt`, `.svelte-kit`, `.astro`, `.turbo`, `.parcel-cache`, `.cache`, `.output`,
-    `.wrangler`, `.vercel`, `.netlify`, `__pycache__`, `.pytest_cache`, `.mypy_cache`,
-    `.ruff_cache`, `.tox`, `.eggs`, `.ipynb_checkpoints`, `coverage`, `.nyc_output`),
-    agent/local tool state (`.gstack`, `.playwright-mcp`), editor and OS debris (`.vscode`,
-    `.idea`, `.DS_Store`, `Thumbs.db`, `desktop.ini`), package-manager debug logs, and the
-    `.railcode` marker.
-  - **Env files never ship** — `.env`, `.env.local`, `.env.development.local`,
-    `.env.production.local` are excluded even when `.gitignore` misses them. Exact names only,
-    so `.env.example` still ships.
-  - **`.claude/` ships on purpose**: its skills and instructions are useful to whoever pulls
-    the source and continues the work.
+  can bring it back. The source respects the project's `.gitignore`, plus a built-in exclude
+  list (vendored deps, build output, VCS/tool/editor caches, the `.railcode` marker, and the
+  `.env*` locals — `.env`, `.env.local`, `.env.development.local`, `.env.production.local`,
+  exact names only, so `.env.example` still ships; `.claude/` ships on purpose) and the
+  resolved build-output dir. `--no-source` skips it. The CLI mirrors the server's default
+  caps — 20 MB of source in total, 25 MB per file, 1000 files — so an oversized tree fails
+  **before** the upload starts. An instance may configure lower values, in which case the
+  server rejects what the CLI allowed.
 - Sends the folder's recorded base version so the deploy is **conditional** — see
   [The Version Marker](#the-version-marker-railcode). `--force` deploys over a version
   someone else has moved past.
-- Prints the live URL after upload. From CLI 0.1.36 this comes from the deploy
-  **response** rather than being assembled locally, so it is right even on a CI runner
-  that has no saved config to derive an org slug from. The shape is
-  `<app>.<org>.<serving-domain>`. Against a server too old to return it the CLI falls
-  back to deriving it, and prints no URL at all rather than a wrong one.
+- Prints the live URL after upload, taken from the deploy **response** rather than assembled
+  locally, so it is right even on a CI runner that has no saved config to derive an org slug
+  from. The shape is `<app>.<org>.<serving-domain>`.
 
 Deploy output resolution order:
 
-1. `railcode.json` `"dist"` wins (use `"."` for a no-build static app). `"build"` still runs
-   first if also set.
-2. Otherwise `railcode.json` `"build"` runs and `dist/` is uploaded.
-3. Otherwise a `package.json` with a `build` script runs `<pm> run build` — where `<pm>` is
-   your app's package manager (pnpm/yarn/bun by lockfile, else `npm`) — and uploads `dist/`.
-4. Otherwise a root `index.html` can be deployed interactively (a `y/N` prompt); for CI set
+1. A managed `type` (`hono+vite`, `hono+static`, `tanstack`, `next`) decides the plan first:
+   the CLI runs that stack's build itself and uploads `dist` (default `dist/client`).
+2. Otherwise `railcode.json` `"dist"` wins (use `"."` for a no-build static app). `"build"`
+   still runs first if also set.
+3. Otherwise `railcode.json` `"build"` runs and `dist/` is uploaded.
+4. Otherwise a `package.json` with a `build` script runs `<pm> run build` — `<pm>` is read
+   from `package.json#packageManager` first, else inferred from the lockfile (pnpm/yarn/bun),
+   else `npm` — and uploads `dist/`.
+5. Otherwise a root `index.html` can be deployed interactively (a `y/N` prompt); for CI set
    `"dist": "."`.
 
-The `railcode.json` schema is `{ app, build?, dist?, dev?: { root?, command?, port? } }`.
+The `railcode.json` schema is
+`{ app, type?, routes?, build?, dist?, server?, dev?: { root?, command?, port?, worker? } }`.
 
 ## Deploy From CI (GitHub Actions)
 
-New in CLI **0.1.36**. Don't hand a pipeline your personal token — it carries every
-power you hold, on every route, and never expires. Use a **deploy token**: an
-app-scoped credential that can `POST` that one app's deploy route and nothing else on
-the API. It cannot read data, list apps, revert a deploy, or mint another token. It is
-a capability, not a login.
+Don't hand a pipeline your personal token. Use a **deploy token**: an app-scoped credential
+that can only `POST` this app's deploy route.
 
 ```bash
 railcode ci github [--app <slug>] [--repo <owner/name>] [--branch <name>]
-                   [--no-secret] [--force]
+                   [--no-secret] [--force] [--yes]
 ```
 
 Run it inside the project. It resolves the app from `railcode.json` (or `--app`) and
@@ -629,9 +576,10 @@ GitHub as the repository secret `RAILCODE_API_TOKEN` **via the `gh` CLI over std
 so it never reaches your screen, your shell history, or an argv another process can
 read — and writes `.github/workflows/railcode-deploy.yml`. With `--no-secret`, without
 `gh`, or when it can't tell which repo this is, it prints the token once plus the exact
-`gh secret set` command instead. `--force` overwrites an existing workflow file.
-**Nothing is added to `railcode.json`** — a file inside the repo can't prove where it
-runs, so trust stays server-side.
+`gh secret set` command instead. `--force` overwrites an existing workflow file. It also
+removes `.railcode` from Git tracking (keeping the local file), so a committed marker can't
+pin CI to an old deploy number. **Nothing is added to `railcode.json`** — a file inside the
+repo can't prove where it runs, so trust stays server-side.
 
 Manage the tokens directly with:
 
@@ -650,25 +598,16 @@ is opt-in. Deploy tokens never appear in the personal-token list — they belong
 app, and the dashboard manages them on the app's **CI** tab.
 
 The generated workflow carries all three values the runner needs, because a runner has
-no `~/.railcode/config.json`:
+no `~/.railcode/config.json`. It runs `deploy --force`: the selected branch is the
+deployment authority, so a version conflict never blocks CI.
 
 ```yaml
-      - run: npx --yes railcode@latest deploy
+      - run: npx --yes railcode@latest deploy --force
         env:
           RAILCODE_API_URL: https://api.railcode.app
           RAILCODE_ORG_UUID: <org uuid>          # an identifier, not a secret
           RAILCODE_API_TOKEN: ${{ secrets.RAILCODE_API_TOKEN }}
 ```
-
-**The runner must resolve a CLI new enough to read `RAILCODE_ORG_UUID` (0.1.36+).**
-`npx railcode@latest` does that once 0.1.36 is on npm; a pinned older version fails with
-*"No organization on file. Finish onboarding, then run `railcode login` again."* even
-though the token is valid — the binary simply doesn't know the variable exists.
-
-What a stolen deploy token can do: replace the served code of that one app — complete
-control of what its visitors see, and full use of the authority the app already holds.
-It **cannot raise** that authority: a deployed `manifest.yaml` lands as `pending` and a
-person still has to ratify it.
 
 `railcode deploy --private` does not work from CI: setting access is a separate call the
 deploy token is refused on (`403`), so the deploy lands and the command then exits `1`.
@@ -677,7 +616,7 @@ Set access from the dashboard or an authenticated session instead.
 ## The Version Marker (`.railcode`)
 
 Every successful deploy and every `railcode pull` writes a small JSON file, `.railcode`, into
-the project folder (new in CLI 0.1.32). It records which deploy the folder currently matches:
+the project folder. It records which deploy the folder currently matches:
 
 ```json
 { "api_url": "…", "org_uuid": "…", "app": "demo", "app_uuid": "…", "deploy": 3 }
@@ -687,7 +626,7 @@ The next deploy sends that number back, and the server refuses to publish over w
 caller has not seen — an `If-Match` for deploys. Without it, two people who both pull the
 same tree and both deploy would have the second silently erase the first.
 
-- **Deploy numbers count from 1 per app** (new in CLI 0.1.33 + the matching server). An app's
+- **Deploy numbers count from 1 per app.** An app's
   history starts at `#1` no matter what else the instance has deployed, and `#3` in one app
   says nothing about any other app.
 - The marker is **scoped**. The CLI sends the base version only when the instance, org and
@@ -748,7 +687,7 @@ Grants come in **three tiers** — owner, **editor**, member (viewer):
 | Tier | Can | Cannot |
 | --- | --- | --- |
 | owner | everything below, plus delete/archive/transfer/set-access, and `app kv`/`app files` | — |
-| **editor** (new in CLI 0.1.35) | deploy, read/revert deploy history, `pull` source, read analytics, read the access policy, add/remove **viewers** | delete, archive, transfer, change the mode, change the editor list, `app kv`/`app files` |
+| **editor** | deploy, read/revert deploy history, `pull` source, read analytics, read the access policy, add/remove **viewers** | delete, archive, transfer, change the mode, change the editor list, `app kv`/`app files` |
 | member (viewer) | open the app while it is `restricted` | anything else |
 
 Editors are **working rights, not an audience share**: an editor can open the app in *every*
@@ -758,7 +697,7 @@ by tier for exactly this reason — do not read the editor list as "who can view
 ```bash
 railcode apps add-editor <app> dana@x.io       # atomic; never rewrites the rest of the policy
 railcode apps remove-editor <app> dana@x.io
-railcode apps add-viewer <app> sam@x.io        # restricted mode only — a 400 otherwise
+railcode apps add-viewer <app> sam@x.io        # restricted mode, or an external user on an organization app
 railcode apps remove-viewer <app> sam@x.io
 ```
 
@@ -767,11 +706,10 @@ granting one person: `set-access` rewrites the whole policy and can race a concu
 
 - **`--editors` absent vs empty is a real distinction.** Omitting `--editors` leaves the
   server's editor list **alone**; `--editors ""` **clears** it. Same for `--members`.
-  (Empty-string flag values only parse correctly on **CLI 0.1.35+** — an earlier CLI rejects
-  `--editors ""` with "requires a value".)
 - **`add-viewer`/`remove-viewer` are edit-gated**, so an editor can choose who else may view
-  the app they work on — but only while the app is `restricted`, since a viewer grant is inert
-  in any other mode.
+  the app they work on. `add-viewer` works while the app is `restricted`, or on an
+  `organization`-mode app for an **external** user (someone an org-wide app does not otherwise
+  reach); it is a `400` in `private` mode, or when the member already has org-wide access.
 - Transferring ownership **demotes the previous owner to editor** rather than cutting them off.
 
 The only deploy-time control is `railcode deploy --private`: a **one-shot** action that sets
@@ -781,59 +719,34 @@ stays flipped). There is no persisted `private` key in `railcode.json`.
 
 ## Working In A Shared App
 
-Since the editor tier (CLI 0.1.35) an app can have **several people deploying it**, so do not
-assume the app you are working on is yours alone. When you did not create the app in this
-session, establish your rights before you act:
+An app can have **several people deploying it**, so do not assume the app you are working on
+is yours alone. When you did not create the app in this session, establish your rights first:
 
 ```bash
 railcode apps show <app>      # prints `your role`, `can manage`, `can edit`
 ```
 
-`can edit` is what governs `deploy` / history / `revert` / `pull`; `can manage` governs
-delete, archive, transfer, and the access mode. Treat a `403` on one of those as a **real
-authority boundary** — report it and ask, rather than routing around it (there is no
-route around it) or retrying with different flags.
+`can edit` governs `deploy` / history / `revert` / `pull`; `can manage` governs delete,
+archive, transfer, and the access mode (see [App Access](#app-access)). Treat a `403` as a
+**real authority boundary** — report it and ask, rather than routing around it or retrying
+with different flags.
 
-Working rules in a shared app:
+Four rules in a shared app:
 
-- **Pull before you deploy.** Your folder may be behind. A `409` on deploy is not a
-  malfunction — it means a colleague published after your last sync, and the message names
-  the live version, who moved it, and when. The correct response is `railcode pull` then
-  `railcode deploy`.
-- **`--force` overwrites a teammate's deploy.** It is the "I know, publish anyway" escape
-  hatch, and it marks the history row as knowingly deploying over a conflict. Never reach for
-  it to clear a 409 on your own initiative — pull, look at what changed, and ask the user
-  before forcing. (A `422` is different: the folder's marker names a deploy the app does not
-  have, e.g. a copied folder. `railcode pull` resyncs it; deleting `.railcode` makes the next
-  deploy unconditional.)
-- **Don't merge blind.** `railcode pull` will not overwrite differing local files without
-  `--force`; it lists them instead. That list is a genuine divergence between your work and
-  what is live — read it before deciding, and never blanket-`--force` a pull that reports
-  conflicts in files you edited.
-- **Editors cannot administer app storage.** `railcode app kv` / `railcode app files` stay
-  **owner-or-admin**; an editor gets a `403`. To verify a write as an editor, use the app's
-  own UI.
-- **The manifest is ratified against *your* authority, on the diff.** Being an editor does not
-  confer the app's declared authority. Deploying an **unchanged** manifest always works, no
-  matter what you personally hold, and a diff that only *removes* operations auto-applies. But
-  a deploy whose diff **adds** an operation you don't hold is rejected up front with a `403`:
-  *"This deploy adds authority you don't hold: …"*. Nothing is published — get the grant, or
-  drop the operation from `manifest.yaml`. Also note `railcode deploy` needs the org-level
-  `app:deploy` capability in your role; an editor grant on its own is not enough.
-- **Never deploy from a tree that is missing `manifest.yaml`.** A manifest absent from the
-  uploaded tree reads as *removed*, and removal only sheds authority, so it **auto-applies** —
-  no permission required, no block. The app silently drops to pass-through (`run_as: user`)
-  and every declared grant is shed. The only signal is one deploy line: `Manifest removed —
-  the app is back to pass-through`. This is the likeliest way to break a shared app, so
-  confirm the manifest is present (and current) before you deploy someone else's app — another
-  reason to `railcode pull` first.
-- **Never commit `.railcode`.** It is per-folder sync state, and a stale one handed to a
-  colleague makes their next deploy claim a base that isn't theirs. `railcode init` gitignores
-  it; if you scaffolded some other way, add it yourself.
-- **Source you push is read by whoever pulls next.** The deploy ships `.claude/` on purpose so
-  the next person (or agent) inherits the app's skills and instructions — worth keeping
-  accurate. It never ships `.env`, `.env.local`, `.env.development.local`, or
-  `.env.production.local`, even when `.gitignore` misses them; `.env.example` does ship.
+- **Pull before you deploy.** A `409` on deploy is not a malfunction — a colleague published
+  after your last sync. The correct response is `railcode pull`, then `railcode deploy`. See
+  [The Version Marker](#the-version-marker-railcode) and
+  [Pull A Deploy's Source](#pull-a-deploys-source).
+- **Ask before `--force`.** It overwrites a teammate's deploy and marks the history row as
+  knowingly deploying over a conflict. Pull, look at what changed, and ask the user first —
+  for `deploy` and for a `pull` that lists conflicting files you edited.
+- **Never deploy from a tree that is missing `manifest.yaml`.** An absent manifest reads as
+  *removed*; removal only sheds authority, so it auto-applies with no block and the app
+  silently drops to pass-through. Confirm the manifest is present (and current) before you
+  deploy someone else's app — see [App Manifest](#app-manifest-authority).
+- **Never commit `.railcode`.** It is per-folder sync state; a stale one handed to a colleague
+  makes their next deploy claim a base that isn't theirs. `railcode init` gitignores it; if
+  you scaffolded some other way, add it yourself.
 
 ## Inspect And Seed App Storage
 
@@ -872,7 +785,9 @@ under `~/.railcode/dev/<instance>/<app>/` and are only cleared with `railcode de
 - **`kv list` paging** — `--limit <n>` with `--offset <n>` as a whole multiple of `--limit`
   (the API pages rather than offsets). `--count` prints the match count instead of rows.
 - **`kv set` values** — inline JSON or `--file <path>`, never both. Any JSON shape is valid:
-  object, array, string, number, or bool.
+  object, array, string, number, or bool. Cap: 256 KiB per serialized value (the server's
+  `APP_KV_MAX_VALUE_BYTES` may override it); put larger payloads in `app files` and keep a
+  small reference in KV.
 - **`--query`** — the same `[[field, op, value], ...]` where-clause the data plane takes.
 - `--json` prints raw JSON on the read commands; `drop` prompts on a TTY and needs `--yes`
   otherwise.
@@ -880,20 +795,9 @@ under `~/.railcode/dev/<instance>/<app>/` and are only cleared with `railcode de
 ### Seeding
 
 `kv set` is the practical way to fill a fresh app so its tables, filters, sorting, paging, and
-charts can actually be reviewed:
-
-```bash
-railcode app kv set companies acme '{"name":"Acme","stage":"won","value":48000}'
-railcode app kv set companies globex --file globex.json
-railcode app files upload ./sample-proposal.docx --name proposal.docx
-railcode app kv list companies                 # confirm the shape that landed
-```
-
-Match the shape the app itself writes — create one record through the UI and read it back with
-`railcode app kv get <collection> <key>` rather than inventing fields. Seed into the scope the
-app reads (`--scope user --user <uuid>` for a `db.user` collection; the default `shared` for
-`db.shared`), or the UI will look empty despite the records existing. Clean up throwaway rows
-with `kv delete`, or `kv drop <collection> --yes` when the whole collection was scratch.
+charts can actually be reviewed. Match the shape the app itself writes — create one record
+through the UI and read it back with `kv get` rather than inventing fields — and seed into the
+scope the app reads, or the UI will look empty despite the records existing.
 
 Treat `set`, `delete`, `drop`, `upload`, and `files delete` as writes to real tenant data:
 they hit the live app the same way a user's click does. Confirm before running one that the
@@ -905,7 +809,8 @@ asking.
 Always write a `manifest.yaml` beside
 `railcode.json` for every app you build or materially change. It declares **which privileged
 operations an app performs and whose authority they run under**. It's separate from
-`railcode.json` (which stays `{ app, build?, dist?, dev? }`) and is uploaded on deploy.
+`railcode.json` (which stays `{ app, type?, routes?, build?, dist?, server?, dev? }`) and is
+uploaded on deploy.
 
 **On apps v2, `run_as: app` is mandatory.** The worker *is* the app principal — there is no
 browser caller whose personal grants could stand in — so a v2 deploy declaring `run_as: user`
@@ -926,9 +831,14 @@ adhoc_sql: [analytics]      # only when the user explicitly requested direct/ad-
 agents: [sales-digest]      # managed agents this app may start (agents.start/invoke).
                             # MISSING = REFUSAL, not pass-through — an undeclared agent 403s
                             # even for a caller who could invoke it from the dashboard.
-                            # (personal_connectors: was REMOVED in CLI 0.3.0 — an account
-                            # someone linked is just a connector row, declared under
-                            # connectors: above by its name, e.g. "gmail-jp": [send_email])
+                            # (there is no personal_connectors: key — an account someone
+                            # linked is just a connector row, declared under connectors:
+                            # above by its name, e.g. "gmail-jp": [send_email])
+crons:                      # apps v2 only: up to 5 per app, 1-minute minimum interval;
+  - schedule: "0 6 * * *"   # the path must start with /api/ or /_serverFn/ and is
+    path: /api/digest       # dispatched as a POST on the app's current deploy
+egress: [api.example.com]   # apps v2 only: outbound hosts the worker may fetch — bare
+                            # hostnames or single-level wildcards
 ```
 
 Commands:
@@ -964,8 +874,8 @@ railcode manifest show <app>        # the app's ratified doc (by slug); --json f
 - `adhoc_sql` grants raw SQL authority and is intentionally scarce. Do not add it unless the
   user explicitly requested direct/ad-hoc SQL; otherwise use `saved_queries`.
 - `connectors` covers accounts someone linked personally as well as shared org credentials —
-  since CLI 0.3.0 they are the same kind of row, told apart by the row's `owner` and
-  `access_mode`, not by a separate manifest key. It ratifies like every other key: the
+  they are the same kind of row, told apart by the row's `owner` and `access_mode`, not by a
+  separate manifest key. It ratifies like every other key: the
   deployer must be able to reach the row (own it, be an admin, or have it shared with them).
   Declaring `gmail-jp: [send_email]` never lets the app read that inbox; an undeclared row or
   tool is a `403` no matter who deployed the app.

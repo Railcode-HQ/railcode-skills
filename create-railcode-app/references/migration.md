@@ -8,13 +8,9 @@ different risks and only one of them is irreversible.
 | **The code rewrite** | Rebuilding the app as a static frontend + worker | Yes — it's just code |
 | **The `migrate` gate** | Flipping the app row's `generation` from 1 to 2 | **No. One-way, permanent.** |
 
-You often want both. You do not always want them on the same app.
-
-You are usually here for one of two reasons: the user asked for a v1 app to become v2, or a v1
-app was asked for something it cannot do — a secret, a signed outbound call, a cron, a rule that
-must hold — and [SKILL.md](../SKILL.md#when-a-v1-app-cant-do-whats-asked) sent you. In the
-second case the migration is the deliverable, not an option to float: tell the user in a
-paragraph, then build. The feature that triggered it becomes the first worker route.
+If [SKILL.md](../SKILL.md#when-a-v1-app-cant-do-whats-asked) sent you here because a v1 app was
+asked for something it cannot do, the migration is the deliverable, and the feature that
+triggered it becomes the first worker route.
 
 ## Decide the path first
 
@@ -51,19 +47,15 @@ railcode deploy       # the worker takes over here
 Keep that window as short as you can: have the v2 build finished, built, and validated
 (`railcode manifest validate`, a clean `railcode dev` run) **before** you type `railcode migrate`.
 
-If you are on Path A you never enter this window at all — which is the argument for Path A.
+`railcode migrate` (`POST …/apps/{uuid}/migrate`) needs the app's **manage** tier (owner grant or
+an admin) **plus** `app:deploy` — an editor cannot run it. It answers **409** while a deploy of
+the app is in progress (retry in a moment) and is a no-op **200** (`already a v2 app`) on an app
+that is already generation 2.
 
-`railcode migrate` requires **CLI 0.2.3**; on 0.2.2 the command exists but is never dispatched and
-fails as unknown.
-
-Whichever path you take, clear any stored notes about the v1 browser SDK once the app is v2 — see
-[Clear Any v1 SDK Memory](../SKILL.md#clear-any-v1-sdk-memory). Notes that were accurate yesterday
-describe a data plane that no longer answers, and they are what pull a half-migrated page back
-toward `window.db`.
+Once the app is v2, clear any stored notes about the v1 browser SDK — see
+[Clear Any v1 SDK Memory](../SKILL.md#clear-any-v1-sdk-memory).
 
 ## What happens to the data
-
-This surprises people in a good way.
 
 **Unscoped v1 data carries over untouched.** A v2 app's flat store **is** the same app scope v1's
 shared/unscoped data lived in. Same app row, same collections, same keys. Your worker's
@@ -71,21 +63,32 @@ shared/unscoped data lived in. Same app row, same collections, same keys. Your w
 Nothing to copy, nothing to migrate.
 
 **Scoped v1 data freezes.** Anything written through `db.user`, `db.role(uuid)`, `files.user`, or
-`files.role(uuid)` becomes readable but permanently un-writable:
+`files.role(uuid)` becomes readable but permanently un-writable. A frozen collection exposes
+only `get(key)` and `list(page = 1, size?)` — no `put`, no `delete`, no query builder. `list()`
+returns `{ key, value, updated_at }` records one page at a time (default 100, max 500):
 
 ```ts
-await db.scoped(userUuid).collection("drafts").query();      // read-only
-await db.scopedRole(roleUuid).collection("shared").get(k);   // read-only
+await db.scoped(userUuid).collection("drafts").list(page, size);  // read-only
+await db.scopedRole(roleUuid).collection("shared").get(key);      // read-only
 ```
 
 There is no write path and there will not be one. If that data must stay live, your worker has to
-copy it into the flat store under keys you choose — usually on first read per user:
+copy it into the flat store under keys you choose — usually on first read per user, paging
+`list()` until a page comes back short (the same rule as flat `list()`, below):
 
 ```ts
 const flatKey = `${ctx.user!.id}:drafts`;
 let mine = await db.collection("drafts").get(flatKey);
 if (!mine) {                                            // one-time lift
-  mine = await db.scoped(ctx.user!.id).collection("drafts").query();
+  const frozen = db.scoped(ctx.user!.id).collection("drafts");
+  const size = 500;
+  const rows = [];                                      // { key, value, updated_at }[]
+  for (let page = 1; ; page++) {
+    const batch = await frozen.list(page, size);
+    rows.push(...batch);
+    if (batch.length < size) break;
+  }
+  mine = Object.fromEntries(rows.map((r) => [r.key, r.value]));
   await db.collection("drafts").put(flatKey, mine);
 }
 ```
@@ -131,7 +134,7 @@ export function collection(name: string) {
 
 | v1 wrapper export | v2 implementation |
 |---|---|
-| `me()` / `getIdentity()` | The page may fetch **`/_api/me`** directly — it survives on v2. Better: return `ctx.user` from a route of your own |
+| `me()` / `getIdentity()` | The page may fetch **`/_api/me`** directly — it and `/_api/logout` are the only `/_api` routes a v2 app keeps. Better: return `ctx.user` from a route of your own |
 | `collection(name)` | `POST /api/rc/kv` → worker `db.collection(name)` |
 | `files.*` | `POST /api/rc/files` → worker `files`; use `files.urls()` for galleries |
 | `query()` / `data().runSQL()` | `POST /api/rc/query` → worker `query` / `data` |
@@ -160,7 +163,7 @@ or they 403 at runtime.
 
 ## The interactive LLM tool loop
 
-This is the one genuinely hard case, and it is worth knowing before you promise a timeline.
+This is the one genuinely hard case.
 
 If the v1 app runs `llm.stream({ tools })` where the tools **pause for a human approval** or
 **close over live browser state** (a store, a callback), you cannot move that loop into the
@@ -180,29 +183,14 @@ pure, dependency-injected generator that takes a `wire` with `generate`/`stream`
 executes the `run` handlers and threads the next turn. Step events, approval, transcript threading
 and stop reasons all keep working, and text still streams live.
 
-Needs `@railcode/sdk` ≥ 0.3.0. Earlier builds refused any call carrying tools on the streaming
-path, which forced the relay onto `generate` and cost the token-by-token final answer.
+Needs `@railcode/sdk` ≥ 0.3.0.
 
 ## Stack taxes (only if you pick TanStack)
 
-Most of a port has nothing to do with the frontend framework. `hono+vite` and `hono+static` add
-no new classes of bug. TanStack Start adds two:
-
-**Build-time prerender ⇒ SSR-safe module init.** SPA mode prerenders the shell at build time in a
-runtime with **no `window`**. Any module-level browser access that runs at import — a store
-reading `window.matchMedia` / `localStorage` at *creation* — crashes the build. Guard them:
-
-```ts
-const q = typeof window !== "undefined" && window.matchMedia
-  ? window.matchMedia("(prefers-color-scheme: dark)") : null;
-```
-
-A v1 `index.html` + `main.tsx` SPA never executes app code at build time, so this whole class of
-bug is *new*.
-
-**Router reconciliation.** If the app owns its own routing (History API + `popstate`), let it keep
-it: an index route plus a splat `$` route that both mount `<App/>`, with **`ssr: false`**. API
-routes are more specific, so they win over the splat.
+Framework taxes are not migration work. `hono+vite` and `hono+static` add no new classes of bug;
+TanStack Start's build-time prerender (no `window` at import time) and router reconciliation
+(`ssr: false` splat route) are covered by the `tanstack` template notes in
+[cli-workflow.md](cli-workflow.md#create-an-app) and by the migrate-to-railcode skill.
 
 ## Checklist
 
@@ -215,14 +203,12 @@ routes are more specific, so they win over the splat.
 - [ ] `run_as: app`; **every** capability declared, including every connector row (shared, owned
       or per-user) and every agent name.
 - [ ] Scoped v1 data: either lifted into the flat store, or confirmed unused.
-- [ ] Interactive tool loops: browser loop + worker turns, **generate-based**.
+- [ ] Interactive tool loops: browser loop + worker turns relayed through `llm.stream()` with
+      run-less tool defs.
 - [ ] Deployed and confirmed the manifest ratified (`railcode manifest show <app>`).
 - [ ] Walked the app live and read `railcode logs app --app <slug>`.
 
 ## Budget it honestly
 
-On a real 11k-line SPA port the split was roughly **85% investigation and authority inversion,
-15% framework tax**. The expensive parts are reading the app well enough to keep the port to one
-seam, and the interactive tool loop. The scaffold itself is a small, learnable cost.
-
-Tell the user that before you start, not after.
+Most of the cost is reading the app well enough to keep the port to one seam, plus any
+interactive tool loop; the scaffold itself is small — tell the user that before you start.

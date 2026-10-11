@@ -3,8 +3,9 @@
 > **Read this only to maintain an app that already exists at generation 1.**
 >
 > **Never build anything new from this file.** Every app created today is generation 2
-> (apps v2), where there is no browser SDK at all — the platform will not serve `/_api/sdk.js`
-> data calls to a v2 app, so a page written from this reference cannot work there. For new
+> (apps v2), where there is no browser SDK at all — `/_api/sdk.js` itself is still served, but
+> every `/_api/*` **data** route answers **403** on generation ≥ 2 (only `/_api/me` and
+> `/_api/logout` survive), so a page written from this reference cannot work there. For new
 > work read [worker-sdk.md](worker-sdk.md); to move an existing app across read
 > [migration.md](migration.md).
 
@@ -12,9 +13,9 @@
 
 Generation 1 apps keep running, and you can keep changing them indefinitely:
 
-- **`railcode deploy` is never gated by generation or CLI version.** The minimum-CLI floor
+- **A plain static deploy is not gated by generation or CLI version.** The minimum-CLI floor
   applies to *creating* apps, not to deploying an existing one. A current CLI deploys a v1 tree
-  exactly as an old one did.
+  exactly as an old one did. (The three generation gates on `railcode deploy` are listed below.)
 - **`railcode dev` still serves `/_api/sdk.js`** and emulates the v1 data plane, so local
   development is unchanged.
 - `railcode pull`, `railcode app kv`, `railcode app files`, `railcode apps ...`, analytics, and
@@ -24,22 +25,20 @@ Generation 1 apps keep running, and you can keep changing them indefinitely:
 
 - **You cannot create a new v1 app.** `railcode init` scaffolds only v2 stacks, and the server
   assigns generation 2 to every new app. There is no flag and no downgrade.
-- **Never add a `"server"` key to a v1 `railcode.json`.** The deploy is refused with `422`. A
-  worker requires generation 2, which requires the one-way migration gate.
+- **`railcode deploy` has three generation gates.** A `server` module on a generation-1 app is
+  refused with `422` (a worker requires generation 2, which requires the one-way migration
+  gate); `crons` or `egress` keys in a generation-1 manifest are refused with `400`; and a
+  generation-2 manifest without `run_as: app` is refused with `400`.
 - **Migration is one-way.** Once an app is generation 2 it never goes back, and its scoped
-  browser data freezes. See [migration.md](migration.md).
+  browser data freezes. `railcode migrate` needs the app's manage tier plus `app:deploy` and
+  answers 409 while a deploy is in progress — see [migration.md](migration.md).
 
 ## Keeping a v1 app healthy
 
-Prefer small, in-place changes. When someone asks for something v1 cannot provide — a secret the
-browser must not see, a call the connector proxy can't authenticate, a scheduled job, a backend,
-authorization that must actually hold — that is the signal to **migrate**, not to stretch the
-browser SDK further. Tell the user why and proceed with the migration; do not build a
-browser-side stand-in and offer v2 as an afterthought. In particular, never park a credential in
-KV, a settings collection, or the page so the browser can call something itself: every user who
-can open the app can read it. The signals and the rule are in
-[SKILL.md](../SKILL.md#when-a-v1-app-cant-do-whats-asked); the procedure is in
-[migration.md](migration.md).
+Prefer small, in-place changes; when a request needs something v1 cannot provide (a secret, a
+backend, a cron, authorization that must hold), **migrate** rather than stretch the browser SDK —
+the rule and its signals are in [SKILL.md](../SKILL.md#when-a-v1-app-cant-do-whats-asked), the
+procedure in [migration.md](migration.md).
 
 Check which generation you are actually holding before you touch anything:
 
@@ -48,10 +47,6 @@ railcode apps show <app> --json | grep generation     # 1 = legacy, 2 = apps v2
 ```
 
 ---
-
-The rest of this file documents the generation-1 platform as it behaves today: zero-config auth,
-the browser SDK globals, access policies, KV/files scoping, SQL, service connectors, and the
-in-page LLM.
 
 ## Request Routing
 
@@ -82,13 +77,8 @@ Railcode derives context from server-controlled request state, not from browser 
   (`Domain=.<parent>`), the only cross-subdomain credential. The platform verifies org
   membership and per-app access before any app byte or `/_api/*` response is served. App
   identity comes from the `Host` header.
-- **Dashboard/API** (the control plane) uses **bearer tokens** — `Authorization: Bearer
-  <token>` — with no cookies/CSRF.
 - **CLI** uses a long-lived, revocable **personal API token** and the selected organization
   context for deploys and local-development proxy calls.
-
-The "magic": frontend code just calls same-origin `/_api/*`, and the backend already knows
-both who is calling and which app/org is calling.
 
 ## SDK Surface
 
@@ -124,7 +114,7 @@ const mine = await query("my_orders", { region: "emea" });  // invoke a saved qu
 const qs   = await savedQueries();                // [{ name, description, params, version }]
 
 const resp = await connector("stripe").fetch("/v1/charges", { method: "POST", body });
-const svc  = await serviceConnectors();           // [{ name, description, auth_type, allowed_methods }]
+const svc  = await serviceConnectors();           // [{ name, kind, has_tools, auth_type, allowed_methods, ... }] — see Service Connectors
 
 const out  = await llm.generate("Summarize this record.", { metadata: { feature: "summary" } });
 
@@ -139,9 +129,10 @@ exists as a **thrower** — see Personal Connectors below.) Notes:
 
 - `me()` returns nested objects. Use **`me().user.uuid`** for stable ownership checks, not to
   simulate storage scoping; use `db.user` / `files.user` for private data.
-  `me().user.is_admin` is true for org owners and admins, `me().user.roles` is the
-  caller's assigned custom roles as `{ uuid, name }[]`, and `me().user.is_app_owner` tells
-  the caller whether they hold the running app's owner grant.
+  `me().user.is_admin` is true for org owners and admins, `me().user.seat` is `"builder"`
+  or `"viewer"`, `me().user.roles` is the caller's assigned custom roles as
+  `{ uuid, name }[]`, and `me().user.is_app_owner` tells the caller whether they hold the
+  running app's owner grant.
   These are UI hints only; server-side authorization remains authoritative.
 - SQL runs through the database namespaces: `data(name)` is engine-generic (dispatches on the
   connection's stored kind server-side); `postgres(name)` / `bigquery(name)` / `turso(name)`
@@ -170,15 +161,8 @@ An app's `access_mode` is one of:
 - **`private`** — owners and editors only.
 - **`restricted`** — owners and editors, plus explicitly-granted members.
 
-Grants are **owner**, **editor**, or **member** (viewer). The editor tier (CLI 0.1.35 + the
-matching server) is a co-deploy right, not an audience share: an editor may deploy, revert,
-pull source, and read analytics, may open the app in **every** mode, and keeps that grant
-across mode changes — but cannot delete, archive, transfer, or change the access mode. Editors
-may add/remove individual **viewers** while the app is `restricted`.
-
-Org admins/owners **bypass** per-app access — they see and manage every app in the org.
-Access is read/set in the **admin UI** or with `railcode apps access` / `set-access` /
-`add-editor` / `add-viewer`. The `AppOut` payload carries both `can_manage` and `can_edit`.
+Grants are **owner**, **editor**, or **member** (viewer); org admins/owners **bypass** per-app
+access. Managing grants and modes is the manage-railcode-org skill's job.
 
 `appUsers()` returns the app's org members (`{ uuid, name, email, is_admin }`) without custom
 role memberships; use it for assignee pickers, mentions, and display, not as an authorization
@@ -344,10 +328,12 @@ if (resp.ok) {
 }
 ```
 
-`serviceConnectors()` lists what this app may call as
-`{ name, description, auth_type, allowed_methods }`. The proxy rejects a method not in
-`allowed_methods` (405) and strips upstream auth/`Set-Cookie` headers; the response is
-truncated at a size limit (`resp.truncated`).
+`serviceConnectors()` lists what this app may call as `{ name, description, auth_type,
+allowed_methods, kind, has_tools, provider, account_label, has_docs, has_openapi }`. `kind`
+(`"http"` | `"mcp"`) and `has_tools` decide how to drive a row: `.fetch(path, init)` for a plain
+HTTP proxy, `.call(tool, args)` for an MCP server or an HTTP row that exposes tools. The proxy
+rejects a method not in `allowed_methods` (405) and strips upstream auth/`Set-Cookie` headers;
+the response is truncated at a size limit (`resp.truncated`).
 
 ## Personal Connectors — REMOVED
 
@@ -356,34 +342,42 @@ into ordinary connectors: an account someone links is an org row with an `owner`
 `access_mode`, reached through the same `connector()` global a shared credential uses.
 
 The closest living relative is a **per-user connector** (2026-10): one name, each member's own
-account, with per-app approval. A v1 app can call one through the same `connector(name)` global,
-but the browser SDK has no `connectionRequired` getter — the refusal is a plain **409** whose
-body is `{ detail: { code: "connection_required", connector, reason, connect_url } }`; send the
-browser to `connect_url` (plus `&return_to=`). Read [worker-sdk.md](worker-sdk.md#per-user-connectors)
-for the model; the rules (no crons, approval per app) are the same.
+account, with per-app approval. A v1 app reaches it through the same `connector(name)` global,
+but the **first** refusal it meets is **409** `connector_needs_app_manifest`: a per-user row is
+usable by an app only when the app's ratified manifest declares `run_as: app` and lists the
+connector, and a v1 manifest defaults to `run_as: user`. Only once that holds does an unlinked
+or unapproved caller get **409** `connection_required`, whose body is
+`{ detail: { code, message, connector, reason, connect_url } }` — send the browser to
+`connect_url`. The browser `ApiError` has no `connectionRequired` or `code` getter: it exposes
+`status`, `message` (the raw response body) and `detail` (which unwraps to `detail.message`, a
+sentence), so read `JSON.parse(err.message).detail` for `code` and `connect_url`. Read
+[worker-sdk.md](worker-sdk.md#per-user-connectors) for the model; the rules (no crons, approval
+per app) are the same.
 
-`personalConnections` is **still bound on `window`**, deliberately — a v1 bundle's call sites are
-frozen and deleting the object would turn each one into `undefined is not a function`, thrown in
-the browser before any request left it. Instead every method still issues its old request and the
-platform answers **410**, so the developer gets an explanation and the platform gets a log line
-naming the app that is still calling.
+`personalConnections` is **still bound on `window`**, deliberately: a v1 bundle's call sites are
+frozen, so each method still issues its old request and the platform answers **410** (with a
+server log line naming the app) instead of the page throwing `undefined is not a function`.
 
-The 410 body carries what you need:
+The wire body is `{ "detail": { error, message, your_connectors, replacement, was, note } }`:
 
 ```json
 {
-  "error": "personal_connectors_removed",
-  "message": "Your \"gmail\" is now the connector \"gmail-jp\", which you own.",
-  "your_connectors": [ { "name": "gmail-jp", "provider": "gmail", "kind": "http", "tools": true } ],
-  "replacement": "connector('gmail-jp').call('send_email', { ... })",
-  "note": "This is a generation-1 app. connector(name) is already in the platform SDK it loads
-           from /_api/sdk.js, so no migration to apps v2 is required — but the call site is in
-           your bundle, so the app must be rebuilt and redeployed."
+  "detail": {
+    "error": "personal_connectors_removed",
+    "message": "Personal connectors were removed. Your \"gmail\" is now the connector \"gmail-jp\", which you own.",
+    "your_connectors": [ { "name": "gmail-jp", "provider": "gmail", "kind": "http", "tools": true } ],
+    "replacement": "connector('gmail-jp').call('send_email', { ... })",
+    "was": "gmail",
+    "note": "This is a generation-1 app. connector(name) is already in the platform SDK it loads from /_api/sdk.js, so no migration to apps v2 is required — but the call site is in your bundle, so the app must be rebuilt and redeployed."
+  }
 }
 ```
 
-**Fixing a v1 app does not mean migrating it to apps v2.** `connector()` is already in the SDK
-served from `/_api/sdk.js`. Swap the call and redeploy:
+Page code never sees that structure: the browser SDK catches the `ApiError`, logs
+`[railcode] <message>` to the console, and rethrows a plain `Error` whose message is
+`detail.message` only. The structured body is in the network tab.
+
+Swap the call and redeploy — no v2 migration needed, as the note says:
 
 ```js
 const tools = await connector("gmail-jp").tools();
@@ -404,10 +398,12 @@ Three things to know while doing it:
   model is unchanged in spirit: an undeclared row or tool is a `403`, and declaring
   `["send_email"]` still cannot read the inbox.
 - **Custom MCP servers** work the same way, via `railcode connector add-mcp <name> <https-url>`.
-  They keep their `custom_<slug>` name and, unlike before, **can** be declared by managed agents.
+  The row is named whatever you pass as `<name>`; only rows migrated from the old surface kept a
+  `custom_<slug>` id. Any connector row the agent's creator holds can also be named under a
+  managed agent's `tools.connectors`; per-user rows cannot.
 
-An already-deployed v1 app keeps serving throughout: authorization reads the projected grant rows
-rather than the manifest document, so only `personalConnections` calls and re-deploys are refused.
+An already-deployed v1 app keeps serving throughout; only `personalConnections` calls and a
+redeploy with `personal_connectors:` in the manifest are refused.
 
 `railcode dev` reproduces this exact gate locally against your app's `manifest.yaml` — see
 [cli-workflow.md](cli-workflow.md#local-dev).
@@ -434,14 +430,14 @@ const result = await llm.generate("Classify this customer.", {
   },
   metadata: { feature: "customer-health", object_type: "customer", object_id: customerId }
 });
-// result: { text, output, usage, cost, provider, model, finishReason, requestId }
+// result: { text, output, toolCalls, usage, cost, provider, model, finishReason, requestId }
 ```
 
 - Input is a prompt string **or** a `messages: [{ role, content }]` array. Options:
   `provider`, `model`, `system`, `output`, `tools`, `limits`, `signal`, `maxOutputTokens`,
   `metadata`. `temperature` is not supported.
-- `llmProviders()` lists the callable catalog as `{ provider, default, models: [{ model,
-  default }] }` (the same data `railcode llm providers` prints). Pass a catalog `model` (its
+- `llmProviders()` lists the callable catalog as `{ provider, managed, default, models: [{
+  model, default }] }` (the same data `railcode llm providers` prints). Pass a catalog `model` (its
   provider is implied) and/or a `provider` (alone → that provider's default model); omit both
   for the org default.
 - `llm.generate()` supports `{ output: { type: "json", schema } }`. JSON schemas run in
@@ -548,13 +544,8 @@ The mechanics worth knowing:
 - **JSON output composes with the loop.** `{ output: { type: "json", schema } }` on a tool
   loop rides a final non-streaming turn; on `llm.stream` the value lands on `done.output`.
 
-**This loop vs a managed agent:** the loop runs in the viewer's tab with the app's SDK
-authority, bounded to seconds — right for interactive analysis over data the app already
-reaches. Files, code execution, outside triggers (Slack, cron, API), unattended or durable
-work, viewer-independent effects, and auditable run history all belong to a **managed
-agent** instead — see the decision table in `SKILL.md` ("In-Page LLM vs Managed Agents").
-The planes compose: a tool's `run` may delegate to an agent — see
-[app-patterns.md](app-patterns.md).
+**This loop vs a managed agent:** see the decision table in
+[SKILL.md](../SKILL.md#worker-llm-vs-managed-agents).
 
 ## Email
 
@@ -583,8 +574,9 @@ const res = await email.send({
   even failed sends) → `429` when exhausted; suppressed (bounced/complained) recipients are
   rejected. An unconfigured provider returns `503 email_unavailable`. Render all of these as
   normal app states — never retry loops.
-- Use the SDK's email discovery surface when the UI must show availability or remaining quota;
-  send through `email.send`.
+- The `email` global is `{ send }` only. To show availability or remaining quota, fetch the
+  discovery route yourself — `fetch("/_api/email", { credentials: "include" })` returns
+  `{ configured, from, dailyRemaining }` — and send through `email.send`.
 
 ## Local Dev Bridge
 
@@ -609,6 +601,3 @@ const res = await email.send({
   grants. The dev server reads your app's local `manifest.yaml` `connectors:` and reproduces
   the same app-plane gate production enforces: an undeclared row or tool `403`s locally too,
   before the request ever reaches the real account.
-
-This lets agents build most app behavior without a live server, then layer on
-production-backed SQL/LLM/connectors/email once credentials and access are available.
