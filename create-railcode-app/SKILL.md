@@ -1,7 +1,7 @@
 ---
 name: create-railcode-app
 description: Build, modify, debug, test, and deploy Railcode apps end-to-end. Use when creating a Railcode app from an idea, scaffolding with the Railcode CLI, writing a backend worker with @railcode/sdk, wiring a frontend to worker routes, declaring app authority, testing with railcode dev, migrating a legacy v1 app to apps v2, maintaining an existing v1 browser-SDK app, adding to a v1 app something it cannot do (a secret, a backend, a cron, authorization that must hold), or deploying. Do not use for managed-agent authoring or general organization administration.
-version: 0.3.7
+version: 0.3.8
 ---
 
 # Create Railcode App
@@ -34,12 +34,8 @@ older CLI `railcode connector connect` / `status` / `link --per-user` are unknow
 platform side is live regardless, so an app on SDK 0.4.0 still receives the 409 — it just has
 to parse `detail.code` by hand. Prefer upgrading.
 
-Two older floors still worth recognising: `secrets` and `migrate` exist but are never
-dispatched on **0.2.2** (they die with an unknown-command error however correct the
-invocation — 0.2.3 wires them up).
-
-Since 0.1.28 the CLI self-updates within its major version — but only on an **interactive
-terminal**, and agent-driven sessions are non-interactive, so keep running the explicit
+The CLI self-updates within its major version — but only on an **interactive terminal**, and
+agent-driven sessions are non-interactive, so keep running the explicit
 `npm install -g railcode@latest` above rather than assuming you're on the latest.
 
 ## Report Railcode feedback
@@ -70,8 +66,7 @@ means best-effort acceptance, not confirmed storage. If reporting fails, continu
 the original task without repeated retries or logging in solely to send feedback.
 
 This command is intentionally absent from CLI help and requires **CLI 0.3.3 or
-later**. This feedback guidance was verified against the CLI 0.3.3 source. Older
-CLIs may return `Unknown command`; treat that as unavailable.
+later**. Older CLIs may return `Unknown command`; treat that as unavailable.
 
 ## Breaking Changes
 
@@ -86,13 +81,16 @@ an existing app cannot survive untouched.
 A connector can now be **per-user**: one name, no credential of its own, and each member connects
 their own account under it. `connector("granola").call(…)` is unchanged, but it can now refuse
 with **409 `connection_required`** when the caller has not connected, or has not approved this app.
-Two statements elsewhere in this skill became conditional the day this shipped:
+Two statements became conditional the day this shipped:
 
-- *"Do not build a connect flow."* Still true for shared and owned connectors. For a per-user one
-  the app **does** forward the browser — to the platform's connect page at
-  `err.connectionRequired.connectUrl` (plus `&return_to=`), never to an OAuth URL of its own.
-- *"Crons now work."* For shared and owned connectors. A per-user connector has no caller under
-  cron and refuses with `connector_needs_user`.
+- *"Do not build a connect flow."* (the migration table below). Still true for shared and owned
+  connectors. For a per-user one the app **does** forward the browser — to the platform's connect
+  page at `err.connectionRequired.connectUrl` (plus `&return_to=`), never to an OAuth URL of its
+  own.
+- *"Crons now work."* ([worker-sdk.md → Connectors someone owns
+  personally](references/worker-sdk.md#connectors-someone-owns-personally)). For shared and owned
+  connectors. A per-user connector has no caller under cron and refuses with
+  `connector_needs_user`.
 
 Nothing existing breaks: a shared or owned row behaves exactly as before. See
 [worker-sdk.md → Per-user connectors](references/worker-sdk.md#per-user-connectors) and
@@ -130,7 +128,7 @@ An owned row is `restricted` (owner, admins, and whoever it is shared with) unti
    | `personalConnections.call("gmail", "send_email", args)` | `connector("gmail-jp").call("send_email", args)` |
    | `personalConnections.tools("gmail")` | `connector("gmail-jp").tools()` |
    | `personalConnections.list()` | `serviceConnectors()` |
-   | `personalConnections.connect("gmail")` | **No app-side equivalent.** Linking left the app: the person runs `railcode connector link gmail` or links from the dashboard. Do not build a connect flow into the app. |
+   | `personalConnections.connect("gmail")` | **No app-side equivalent for a shared or owned row.** Linking left the app: the person runs `railcode connector link gmail` or links from the dashboard. Do not build a connect flow into the app. The exception is a **per-user** connector, where the app forwards the browser to the platform's `connectUrl` — see the entry above and [per-user connectors](references/worker-sdk.md#per-user-connectors). |
 
 4. Replace `personal_connectors:` with `connectors:` in the manifest, naming the row and the
    tools it may call — e.g. `connectors: { "gmail-jp": ["send_email"] }`, or `["*"]` for the
@@ -214,20 +212,16 @@ platform's answer is "that needs a worker" — and a v1 app cannot get a worker 
 **The rule: migrate, tell the user, and keep going.** When the request lands on a row, the
 deliverable is the migration plus the feature — not a v1 approximation of the feature.
 
-- **Do not build the workaround.** A key parked in KV so the page can sign requests itself, a
-  poll loop standing in for a schedule, an approval check in a tab — each one ships, demos, and is
-  the wrong design, and the user finds out afterward if at all. If you catch yourself writing
-  "the key is readable by anyone who can use the app", you are building the workaround.
-- **Say it up front, in one paragraph, then proceed.** What the request needs, that v1 has no
-  way to provide it, that the app is going to v2 to get it, and which path: a new slug (Path A —
-  reversible, preferred) or in place (Path B — one-way, with a downtime window). Do not stop the
-  work to ask whether to migrate, and do not present migration as an alternative once the
-  workaround is already built.
-- **Size it honestly — it is smaller than it looks.** v2 has no browser SDK, so every data call
-  the page makes moves behind the worker. But that is a rewrite of the app's one SDK wrapper into
-  `fetch()` calls to worker routes, not a rewrite of the app: views, state, and business logic
-  stay. The feature you were asked for becomes the first new route. `apps/crm` in
-  `railcode-examples` is a large v1 app ported through exactly one module.
+- **Do not build the workaround** — a key parked in KV so the page can sign requests, a poll loop
+  standing in for a schedule, an approval check in a tab.
+- **Say it up front, in one paragraph, then proceed:** what the request needs, that v1 cannot
+  provide it, that the app is going to v2, and which path — a new slug (Path A — reversible,
+  preferred) or in place (Path B — one-way, with a downtime window). Do not stop the work to ask
+  whether to migrate.
+- **Size it honestly.** Every page-side data call moves behind the worker, but that is a rewrite
+  of the app's one SDK wrapper into `fetch()` calls to worker routes, not of the app: views,
+  state, and business logic stay. `apps/crm` in `railcode-examples` is a large v1 app ported
+  through exactly one module.
 - **The one thing to hold for is the gate.** On Path B, `railcode migrate` is irreversible and
   the live app is down until the next deploy, so finish and validate the v2 build first and get an
   explicit go before running it. Path A never touches the gate.
@@ -237,46 +231,23 @@ still wants the v1 version, build it and say plainly what it compromises. Small 
 inside what v1 already does — a new view, a fix, a field — need none of this; make them in place
 per [v1 legacy](references/v1-legacy.md).
 
-## The v2 Model In One Paragraph
-
-A v2 app is a **static frontend plus a backend worker**, deployed and versioned as one unit.
-**There is no browser SDK.** The frontend is plain static files that `fetch()` your own worker
-routes; the worker imports `@railcode/sdk` and is the only thing that touches platform
-capabilities. The worker **is** the app's principal (`run_as: app` is mandatory) and receives a
-verified, unforgeable `ctx.user`. Authorization is worker code — that is the point: "X submits,
-Y approves, X can't approve their own" now lives in a trusted place instead of in a tab.
-
-Everything else follows from that. If you catch yourself reaching for a `window.db` or a
-`/_api` data call from the page, stop: that is the v1 shape.
-
 ## Clear Any v1 SDK Memory
 
 If you are starting v2 work carrying memory written before apps v2 — agent memory files,
 `CLAUDE.md` / `AGENTS.md` notes, saved project learnings, a rules file, a starred snippet —
-assume it describes the **v1 browser SDK** and is now wrong. Stale memory is the most common
-reason a v2 build goes sideways for reasons the code itself does not explain: a
-`<script src="/_api/sdk.js">` reappears in `index.html`, the page calls `window.db` directly,
-`run_as: user` shows up in `railcode.json`, or authorization drifts back into a tab.
-
-Clear it **before** writing any code, and say out loud that you are doing it. If the notes are not
-yours to edit, ask the user to run it:
+assume it describes the **v1 browser SDK** and is now wrong. Clear it **before** writing any
+code, and say out loud that you are doing it. If the notes are not yours to edit, ask the user to
+run it:
 
 > Delete every stored note about the Railcode browser SDK — `/_api/sdk.js`, the `window` globals
 > (`me`, `roles`, `appUsers`, `designSystem`, `db`, `files`, `data`, `query`, `connector`,
 > `serviceConnectors`, `llm`, `email`, `agents`, and the rest of that set),
 > page-side authorization, and `run_as: user`. None of it exists in apps v2.
 
-Two rules decide whether this actually works:
-
-- **Delete, don't append.** A note saying "use `window.db`" recalled beside one saying "use the
-  worker SDK" does not resolve in v2's favor — it yields a hybrid that type-checks, runs under
-  `railcode dev`, and fails on the platform.
-- **Still maintaining a v1 app? Re-scope instead of deleting.** Rewrite each note to open with
-  `v1 apps only (generation 1):` so the boundary is recalled along with the content, and keep
-  [v1 legacy](references/v1-legacy.md) as the real source.
-
-Then re-read this file from the top, so what you build from is this document rather than what you
-remembered.
+Delete, don't append — a v1 note recalled beside a v2 note yields a hybrid that runs under
+`railcode dev` and fails on the platform. If you still maintain a v1 app, re-scope each note to
+open with `v1 apps only (generation 1):` instead of deleting it, and keep
+[v1 legacy](references/v1-legacy.md) as the real source.
 
 ## Map The Request To Railcode
 
@@ -290,27 +261,22 @@ what is available; the discovery commands are in Build step 1.
 | "Let someone use their own Gmail, Slack, or other account" | **Connector** they link and own (`railcode connector link gmail`), named under `connectors:`. Owned rows are `restricted` until shared — see [connectors](references/cli-workflow.md) |
 | "Everyone who uses the app should act as **themselves** — their own meetings, inbox, calendar" | A **per-user connector** (`railcode connector link granola --per-user`): one name, each member runs `railcode connector connect granola` (or the platform's connect page). Same manifest and call site; the worker handles `ApiError.connectionRequired` by sending the browser to `connectUrl`. OAuth providers only; no crons — see [per-user connectors](references/worker-sdk.md#per-user-connectors) |
 | "Connect an account for a product Railcode does not bundle" | `railcode connector add-mcp <name> <https-url>` — a remote MCP server as a connector you own |
-| "Use our team's shared Stripe, CRM, or other SaaS account" | An **org-managed connector** (`access_mode: organization`) via `connector().fetch()` or `connector().call()`; an admin owns the credential |
+| "Use our team's shared Stripe, CRM, or other SaaS account" | An **org-managed connector** (no member owner; an admin holds the credential) via `connector().fetch()` or `connector().call()`. Whether members can reach it is the row's separate `access_mode` |
 | "Store app settings, drafts, approvals, or lightweight records" | `db` — one flat store; partitioning and access policy are **your worker's code** |
 | "Upload, store, download, or display files" | `files` (server-plane: your worker holds the bytes) |
-| "Read, extract, summarize, transform, or generate a file with AI" | **Managed agent** with `app_files` + sandbox, started with `agents.start()` |
+| "Read, extract, summarize, transform, or generate a file with AI" | **Managed agent** — see [Worker LLM vs Managed Agents](#worker-llm-vs-managed-agents) |
 | "Summarize or classify data while the user waits" | `llm.generate()` / `llm.stream()` in the worker |
 | "Run on a schedule" | A `crons:` entry hitting one of your worker routes — **or** the agent's own schedule |
-| "Run in the background, from Slack, or after the tab closes" | **Managed agent** via `agents.start()`, results polled from the worker |
+| "Run in the background, from Slack, or after the tab closes" | **Managed agent** — see [Worker LLM vs Managed Agents](#worker-llm-vs-managed-agents) |
 | "Send a system-owned transactional email" | `email.send()`; a Gmail **connector** when mail must come from a specific person's own account |
 | "Call an arbitrary website/API" | Declare the host under `egress:`, or use a connector. The default allow-list is the data plane only |
 
-**The file boundary still holds.** The worker may `put`/`get`/`list`/`delete` files, but any AI
-that must **read, understand, extract, summarize, transform, or generate** a file must be a
-**managed agent** with `app_files` and its sandbox. Never feed file contents or file URLs to
-`llm.generate()` as a substitute. Start the agent from the worker with `agents.start()` and read
-its result back.
-
 ## Start From An Example
 
-`railcode init` is the starting point for a new app: each worker template scaffolds a working
-platform tour (identity, a todo list on `db`, files, and the read-only org surfaces) you can read
-and then delete.
+`railcode init` is the starting point for a new app. The default `hono+vite` template scaffolds
+the onboarding **welcome app**; `hono+static` and `tanstack` scaffold a small **platform tour**
+(identity, a todo list on `db`, files, and the read-only org surfaces). Either is meant to be read
+and then deleted.
 
 For anything past the tour, read `railcode-examples`. Every app there is **generation 2** —
 `frontend/` + `server/index.ts`, the shape you are building — so it is safe to copy from, and
@@ -341,10 +307,8 @@ Don't start writing app code until steps 1–2 are done.
 
 ### 1. Ask before building
 
-Ask the user a few short questions to scope the app — **all in one batch, as early as
-possible**. This is the moment the user is still present; questions dribbled out mid-build risk
-landing after they've stepped away. Ask only what changes the design, then pick sensible
-defaults for the rest and state them.
+Ask the user a few short questions to scope the app — **everything in one batch, up front**.
+Ask only what changes the design, then pick sensible defaults for the rest and state them.
 
 Phrase every question for a **non-technical user who knows nothing of Railcode internals**: ask
 about intent, and let the answers determine the primitives without naming them. *"Should each
@@ -475,8 +439,7 @@ surface that fits:
 | Files | `files.put/get/url/urls/list/delete` |
 | Database reads | `query()` / `savedQueries()` by default; `data()`/`postgres()`/`bigquery()`/`turso()` only when asked |
 | Third-party account, shared or personally owned | `connector('name').fetch()` (http) or `connector('name').call()` (mcp) — one surface for both; ownership and access mode live on the row |
-| Short, watched AI | `llm.generate()` / `llm.stream()` |
-| File AI, code execution, durable AI | `agents.start()` + a managed agent |
+| AI | `llm.generate()` / `llm.stream()`, or `agents.start()` + a managed agent — see [Worker LLM vs Managed Agents](#worker-llm-vs-managed-agents) |
 | Org member directory | `appUsers()` |
 | Per-app secrets | `secrets.NAME` |
 | System-owned mail | `email.send()` |
@@ -513,7 +476,7 @@ vs managed agent**, and it is **capability, not sophistication**:
 | The AI feature… | Use |
 |---|---|
 | Summarizes / classifies data the worker already reads, in seconds | **Worker `llm`** |
-| Reads, understands, extracts, transforms, or generates any file | **Managed agent** (`app_files` + sandbox) |
+| Reads, understands, extracts, transforms, or generates any file | **Managed agent** (`app_files` + sandbox). The worker may `put`/`get`/`list`/`delete` files, but never feed file contents or file URLs to `llm.generate()` as a substitute |
 | Writes and runs code | **Managed agent** (sandbox) |
 | Must survive the request, be retried, or take minutes | **Managed agent** |
 | Is triggered from Slack or by an agent schedule | **Managed agent** |
@@ -534,9 +497,9 @@ quietly build an approximation that can't work.
 | Public or customer-facing apps | Every viewer must be a signed-in org member — no anonymous access, no self-signup. These are internal tools |
 | Inbound webhooks / public API endpoints | Your worker only runs on an authenticated app request or your own cron. Poll the source on a cron instead of receiving events |
 | Arbitrary outbound calls | Egress is an allow-list. Declare hosts under `egress:` (exact names or one wildcard level; no schemes, ports, or paths); the default is the data plane only |
-| Real-time push (websockets, presence) | No push surface; UIs poll. LLM streaming is the only streaming response |
+| Real-time push (websockets, SSE subscriptions, presence) | No server push surface; UIs poll. Request-scoped streaming responses are fine — `toNdjson()` streams any iterable (an `llm.stream()` or your own) to the page |
 | Next.js outside what the preset supports | Next.js itself runs: `railcode init <app> --template next` (App Router, pages at their normal URLs; see "Next.js and worker-first routing" in `references/cli-workflow.md`). Not supported: Next 16.4 (it builds, then fails on every request — keep `next` on `~16.3.8`), the image optimizer, `next/og` and anything else that loads `.wasm`, and timed ISR (`export const revalidate = N`). Pages Router is untested. If the CLI has no `next` template or the server has no `worker_routes` (an old binary, a self-hosted server that is behind), the `migrate-to-railcode` skill's Next.js guide has a fallback that mounts the app under `/api` |
-| Custom domains, native mobile, push notifications | Apps are responsive web apps at `<app>.<parent>` |
+| Native mobile, push notifications | Apps are responsive web apps at `<app>.<parent>`. A custom domain is not an app-code concern: it is an org-level add-on an admin configures in dashboard Settings → Custom domain |
 | Bring-your-own API keys in frontend code | The frontend holds nothing. Use `secrets` in the worker, or a connector |
 
 **Worker runtime**
@@ -548,7 +511,7 @@ quietly build an approximation that can't work.
 | Module size | 10 MB (5 MB on a server without `worker_routes`) |
 | Secrets | 64 per app, 5 KB per value, write-only |
 | Daily caps | LLM tokens and emails per app; both return a typed `429` |
-| Invocation logs | Retained ~14 days |
+| Invocation logs | Retained indefinitely for now (plan-based retention is planned); ingest is capped per invocation (200 lines / 256 KiB), excess lines dropped |
 
 **Data**
 
@@ -573,7 +536,7 @@ quietly build an approximation that can't work.
 | **Per-user** connectors don't compose with cron | A per-user connector runs on the *caller's* account; cron has none, so `fetch`/`tools`/`call` refuse with `409` `connector_needs_user` (also `connection()` / `checkHealth()`) |
 | For scheduled work on one person's account, use a connector they **own** | An owned row's credential belongs to the row, so a cron route can call it (`connectors: { "granola-jp": ["*"] }`); only the owner (and whoever they share with) ratifies it. A managed agent on its own `railcode agent schedule` is the alternative — agents cannot name per-user connectors either |
 | Your own authz code must handle a null caller | A shared route reading `ctx.user.roles` throws under cron — or returns everything. The flat store enforces nothing. Guard with `if (!ctx.user)` |
-| Everything else still works under cron | `db` (incl. `db.scoped`), `files`, `sql`, `query`, `llm`, `email`, `appUsers()`, `secrets`, egress, and **org/service connectors** — a v2 worker's authority is its `run_as: app` manifest, not the caller |
+| Everything else still works under cron | `db` (incl. `db.scoped`), `files`, `data`/`postgres`/`bigquery`/`turso`, `query`, `llm`, `email`, `appUsers()`, `secrets`, egress, and **org/service connectors** — a v2 worker's authority is its `run_as: app` manifest, not the caller |
 | Cron caps | 5 schedules per app, 1-minute minimum. A schedule pauses with a visible reason if the current deploy has no worker |
 | Cron is at-least-once and may overlap | `ctx.invocationId` is your idempotency key. Never promise "exactly once" |
 | Cron dispatches **POST** | A route declared `GET`-only will 404 on every fire and look like a broken schedule |
@@ -583,8 +546,7 @@ quietly build an approximation that can't work.
 
 ## Visual Direction
 
-Treat the scaffold as functional scaffolding, not a style guide — the templates ship a platform
-tour meant to be read and deleted.
+Treat the scaffold as functional scaffolding, not a style guide.
 
 If the user opted into the Railcode design system, fetch it with `railcode design-system` and
 follow it. Otherwise default to its spirit: quiet internal-tool UI, neutral surfaces, compact

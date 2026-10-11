@@ -20,7 +20,7 @@ SDK surface itself see [worker-sdk.md](worker-sdk.md). For a generation-1 app se
 
 ## Layout by stack
 
-`railcode init` scaffolds four stacks and **the CLI owns the build for all of them** — the app
+`railcode init` scaffolds five stacks and **the CLI owns the build for all of them** — the app
 declares no bundler, no `wrangler`, and no Cloudflare package.
 
 **`hono+vite`** (default) — Vite + React frontend, Hono worker:
@@ -43,6 +43,11 @@ railcode.json      # { app, type: "hono+static", dist: "dist/client", server: "d
 **`tanstack`** — TanStack Start in SPA mode; server functions (`/_serverFn/*`) and routes
 (`/api/*`) run in the worker. Data routes must be `ssr: false`.
 
+**`next`** — Next.js (App Router), whole: Server Components, Server Actions, Route Handlers and
+streaming all run in the worker, which answers every path (`routes: all` is implied). Built with
+`@railcode/next`, so the app carries no wrangler or OpenNext config. Pages that call
+`@railcode/sdk` must render per request — there is no invocation at build time.
+
 **`static`** — pure hosting. No worker and no worker manifest keys.
 
 **Bring your own** — any bundler that emits a static `dist` plus **one self-contained ESM module**
@@ -52,16 +57,10 @@ worker deploys and then crashes at invocation.
 
 ## The split, and why it matters
 
-```
-browser ──fetch('/api/…')──▶ your worker ──@railcode/sdk──▶ platform
-   │                              │
-   no credentials            ctx.user (verified, unforgeable)
-   no authority              all authority lives here
-```
-
-The frontend is static files. It holds nothing and proves nothing. Any check it makes is a UX
-affordance, not a control — a user can call `/api/*` directly with `curl` from a logged-in
-session, so **every rule must also exist in the worker**.
+The frontend is static files: it holds no credentials and proves nothing. Any check it makes is a
+UX affordance, not a control — a user can call `/api/*` directly with `curl` from a logged-in
+session, so **every rule must also exist in the worker**, where `ctx.user` is verified and all
+authority lives.
 
 The only platform endpoints a v2 page may call are `/_api/me` and `/_api/logout` (the chrome
 bar's). Prefer getting identity from your own worker route so there is one source of truth.
@@ -81,7 +80,7 @@ app.get("/api/me", (c) => c.json({ user: ctx.user }));
 app.get("/api/notes", async (c) => {
   const rows = await db.collection("notes").query()
     .where("owner", "eq", ctx.user!.id).orderBy("updated_at", "desc").page(1, 100);
-  return c.json({ items: rows });
+  return c.json({ items: rows.map((r) => r.value) });   // page() returns KvRecord[]
 });
 
 export default app;
@@ -135,19 +134,11 @@ export const openapi = {
 app.get("/api/openapi.json", (c) => c.json(openapi));
 ```
 
-Rules that make it useful rather than decorative:
+Two platform facts shape the document:
 
 - **Mark what is required.** `required: true` on a path parameter, and `required` on the body
   schema — those are exactly what `list_app_tools` reports as the arguments to supply. An
   optional body's own required fields are not reported, because they only bind once a body is sent.
-- **Write summaries for agents, not for humans browsing docs.** One line saying what the route
-  does and what it changes.
-- **Say what errors look like** in `info.description` (e.g. `{"error": "..."}` with 400/404/409),
-  so a failed call is readable.
-- **Keep it honest.** A hand-written document drifts the moment you add a route. For anything
-  past a handful of routes, generate it from the route definitions — `hono-openapi`'s
-  `describeRoute` + `validator` sits beside ordinary Hono routes and emits the same document
-  from the schemas that already validate requests.
 - **Local `$ref`s are fine** (the MCP inlines them); external `$ref`s are dropped.
 
 ### Relay platform errors verbatim
@@ -162,21 +153,24 @@ async function relay<T>(c: Context, fn: () => Promise<T>) {
   } catch (err) {
     if (err instanceof ApiError) {
       let body: unknown;
-      try { body = JSON.parse(err.message); } catch { body = { detail: err.message }; }
+      try { body = JSON.parse(err.message); } catch { body = { detail: err.detail }; }
       return c.json(body, err.status);
     }
     throw err;
   }
 }
 
-app.post("/api/charge", (c) => relay(c, () => connector("stripe").fetch("/v1/charges", { method: "POST" })));
+// connector().fetch() resolves to a Response-like envelope — read its body before returning it
+app.post("/api/charge", (c) =>
+  relay(c, async () => (await connector("stripe").fetch("/v1/charges", { method: "POST" })).json()),
+);
 ```
 
 Then the frontend can act on meaning:
 
 ```ts
 if (res.status === 409) showConnectPrompt();      // connector not linked / needs re-auth
-if (res.status === 429) showQuotaNotice();        // daily cap
+if (res.status === 429) showQuotaNotice();        // a quota — the body's detail says which
 if (res.status === 403) showNotAllowed();         // undeclared authority
 ```
 
@@ -230,8 +224,8 @@ if (!row || row.owner !== ctx.user!.id) return c.json({ error: "not found" }, 40
 
 Prefer **404 over 403** for records the caller shouldn't know exist — a 403 confirms existence.
 
-The product thesis lives here. Rules like "X submits, Y approves, X can't approve their own"
-are worker code, in a place a user cannot reach:
+Rules like "X submits, Y approves, X can't approve their own" are worker code, in a place a user
+cannot reach:
 
 ```ts
 app.post("/api/requests/:id/approve", async (c) => {
@@ -263,21 +257,15 @@ Store the owner **inside the record too**, so a read can be verified without re-
 await db.collection("notes").put(`${user.id}:${id}`, {
   id, owner: user.id, title, body, updated_at: new Date().toISOString(),
 });
+
+// paged reads come back as KvRecord — the record is under .value
+const latest = await db.collection("notes").query().prefix(`${user.id}:`)
+  .orderBy("updated_at", "desc").first();
+if (latest && latest.value.owner !== user.id) /* never trust the prefix alone */;
 ```
 
-**Always paginate.** `query()` returns one page (default 100, max 500):
-
-```ts
-async function all(name: string) {
-  const out = [];
-  for (let page = 1; ; page++) {
-    const rows = await db.collection(name).query().page(page, 500);
-    out.push(...rows);
-    if (rows.length < 500) break;
-  }
-  return out;
-}
-```
+**Always paginate.** `page()` returns one page (default 100, max 500); loop until a short page —
+the loop is in [worker-sdk.md](worker-sdk.md#list-is-first-page-only).
 
 For anything genuinely large — analytics, history, joins — keep it in a warehouse and read it
 through a saved query. KV filters, orders, and pages; it does not aggregate or join.
@@ -351,19 +339,14 @@ const { items, missing } = await files.urls(names);
 ```ts
 app.post("/api/summarize", (c) => relay(c, async () => {
   const { text } = await c.req.json();
-  return llm.generate({ messages: [{ role: "user", content: `Summarize:\n${text}` }] });
+  return llm.generate(`Summarize:\n${text}`);
 }));
 ```
 
-**Both entry points run a tool loop** when the tools carry `run`: `generate` resolves with the
-finished answer, `stream` yields text and step events live. The one that refuses tools is
-`llm.streamRaw()`, which exists to relay raw ndjson to a browser — there is nobody left in the
-worker to execute a `run`. (Needs `@railcode/sdk` ≥ 0.3.0; before that, streamed loops failed on
-their first turn.)
-
-**Streaming to the page goes through `toNdjson()`.** Do not hand-roll a `ReadableStream` — the
-helper turns a mid-stream failure into an error frame (the 200 is already sent, so it cannot be a
-status) and stops the run when the client hangs up.
+`generate` and `stream` both run the tool loop when tools carry `run`; `streamRaw()` refuses
+run-bearing tools because it only relays bytes. Stream to the page through `toNdjson()`, never a
+hand-rolled `ReadableStream`. The facts and failure modes are in
+[worker-sdk.md](worker-sdk.md#llm).
 
 ```ts
 app.post("/api/chat", async (c) => toNdjson(llm.stream(await c.req.json(), { tools })));
@@ -388,15 +371,14 @@ app.post("/api/extract", async (c) => {
 
 app.get("/api/extract/:id", async (c) => {
   const job = await db.collection("jobs").get(c.req.param("id"));
-  if (!job || job.owner !== ctx.user!.id) return c.json({ error: "not found" }, 404);
+  if (!job || job.owner !== ctx.user!.id) return c.json({ error: "not found" }, 404);  // db does not check
   const run = await agents.get(c.req.param("id"));
   return c.json({ status: run.status, output: run.output_json });
 });
 ```
 
-The frontend polls `/api/extract/:id`. Do not try to hold the request open — the worker SDK
-gives you no way to, and a `get()` loop drains the subrequest budget and still outlives its
-token. See [worker-sdk.md](worker-sdk.md#managed-agents).
+The frontend polls `/api/extract/:id`; the worker never waits for or polls a run itself (why:
+[worker-sdk.md](worker-sdk.md#managed-agents)).
 
 **Results can also arrive by themselves.** An **org** agent's `app_data_write` lands in the app's
 shared scope, which **is** your flat store — so an agent can write straight into a collection your
@@ -404,12 +386,9 @@ worker reads, with no bridge at all.
 
 ## Cron
 
-> **Alpha — expect this to change.** Function crons are the newest part of apps v2. The
-> caller-less trigger model below is settled and the refusals are deliberate, but the limits
-> it produces are under active review. `agent_runs.triggered_by_user_id` is already nullable
-> precisely so that relaxing the agent restriction stays a design decision rather than a
-> migration. **Do not build an app whose core loop needs a cron to do something this section
-> says it cannot** — take the alternative below instead.
+> Function crons are early and their limits are under review. The caller-less trigger model below
+> is settled and the refusals are deliberate. **Do not build an app whose core loop needs a cron
+> to do something this section says it cannot** — take the alternative below instead.
 
 ```yaml
 crons:
@@ -426,12 +405,13 @@ one fact produces every limit here.
 |---|---|
 | `agents.start()` | A run is owned by `(app, caller)`. No caller, no owner |
 | `agents.get()` | The same ownership pair — a cron cannot even poll a run an **http** invocation started |
+| A **per-user** connector | No credential of its own; the call needs a signed-in caller (`connector_needs_user`) |
 
 All refuse up front, before any upstream call.
 
-**The fourth limit is your own authorization code, and it is the one that bites.** A route that
-reads `ctx.user.roles` or filters by `ctx.user.uuid` will throw under cron — or worse, return
-everything, because the flat store enforces nothing. Branch on `ctx.trigger`, or guard early:
+**The limit that actually bites is your own authorization code.** A route that reads
+`ctx.user.roles` or filters by `ctx.user.id` will throw under cron — or worse, return everything,
+because the flat store enforces nothing. Branch on `ctx.trigger`, or guard early:
 
 ```ts
 if (!ctx.user) return c.json({ error: "cron cannot do this" }, 409);
@@ -439,32 +419,22 @@ if (!ctx.user) return c.json({ error: "cron cannot do this" }, 409);
 
 ### What a cron CAN do
 
-Everything else: `db` (including `db.scoped(kind, ownerUuid)` — the owner is an argument, not the
-caller), `files`, `sql`, `query`/`savedQueries`, `llm`, `email`, `appUsers()`, `secrets`, egress,
-and **org/service connectors** — those are the app's own authority, never a caller's.
-
-That is wider than it first looks. A v2 worker's authority is its ratified `run_as: app` manifest,
-so `ctx.user` is *attribution*, not permission. Cron loses only the surfaces whose authority is
-intrinsically one specific person.
+Everything else: `db` (including the read-only `db.scoped(userId)` / `db.scopedRole(roleUuid)` —
+the owner is an argument, not the caller), `files`, `data`/`postgres`/`bigquery`/`turso`,
+`query`/`savedQueries`, `llm`, `email`, `appUsers()`, `secrets`, egress, and **shared and owned
+connectors** — those are the app's own authority, never a caller's. The one connector a cron
+cannot call is a per-user one.
 
 ### Scheduled work on someone's personal account
 
-Don't wait for the app cron — the platform already does this, on the **agent** plane, with a safer
-identity:
-
-1. Create a **personal** agent and give it the connector (Granola, Gmail, ...).
-2. Give the agent its own schedule: `railcode agent schedule`.
-3. The agent writes its results into its owner's USER scope.
-4. Your worker reads them with `db.scoped(ownerUuid)`.
-
-The agent's identity is fixed at `created_by_id`, and its manifest was ratified against that
-field. If the owner leaves the org the run fails loudly instead of acting as somebody else — which
-is exactly why this does not live on the app cron. See `agents/proposals` for the worked example.
+Don't drive it from the app cron — give a **personal** agent the connector (Granola, Gmail, ...)
+and its own schedule (`railcode agent schedule`). Its identity is fixed to its owner, it writes
+results into that owner's USER scope, and your worker reads them with `db.scoped(ownerUuid)`.
+Authoring the agent is the `create-railcode-agent` skill's job; the worked example,
+`agents/proposals`, lives in the `Railcode-HQ/railcode-examples` repo.
 
 ### Operational rules
 
-- The route must accept **POST**. A `GET`-only route 404s on every fire and looks like a broken
-  schedule.
 - **At-least-once, and runs may overlap.** Use `ctx.invocationId` as an idempotency key and make
   external side effects safe to repeat. Never promise "exactly once".
 - Caps: 5 schedules per app, 1-minute minimum.
@@ -481,7 +451,7 @@ is exactly why this does not live on the app cron. See `agents/proposals` for th
 | A loop of `files.url()` | Burns the subrequest budget | `files.urls(names)` |
 | `llm.streamRaw({ tools })` with `run` handlers | Throws — a relay can't execute a tool | `llm.stream()`, or drop `run` and handle the calls yourself |
 | A `GET` cron route | 404s on every fire | Accept POST |
-| Cron calling `agents.start()`/`get()` | `409` | Give the agent its own schedule (see [Cron](#cron)). **Connectors are fine under cron** since CLI 0.3.0 — the credential belongs to the row, not the caller |
+| Cron calling `agents.start()`/`get()` | `409` | Give the agent its own schedule (see [Cron](#cron)). **Shared and owned connectors are fine under cron** — the credential belongs to the row; a **per-user** connector refuses with `409 connector_needs_user` |
 | Swallowing `ApiError` into a 500 | The UI can't tell quota from forbidden | Relay `.status` verbatim |
 | A hand-rolled `ReadableStream` for a stream | A mid-stream failure vanishes; a hang-up keeps burning tokens | `toNdjson(source)` |
 | A code-split or CJS worker bundle | Deploys, then crashes at invocation | One self-contained ESM module |
