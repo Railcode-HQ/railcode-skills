@@ -131,6 +131,11 @@ Any member may list members. Mutations require admin authority. The owner tier i
 assignable through `set-role`. **There is no CLI command that creates a member** — a new
 person joins through the invite flow in the web app, then `set-role` adjusts their tier.
 
+System tiers also decide who can reach the org's **MCP endpoint** (the hosted MCP that lets an
+agent discover and call deployed apps): owners, admins, builders and **external** users hold
+`mcp:access`; viewers deliberately do not yet. An external user can only discover and call the
+apps shared with them, and `mcp:access` never grants `app:invoke` or the bearer data plane.
+
 ## Custom Roles and Grants
 
 ```bash
@@ -284,6 +289,27 @@ to the required HTTP verbs.
 
 Member-facing `connector list`, `docs`, and `fetch` are invocation tools. Use them only as a
 deliberate verification call because `fetch` can cause downstream side effects.
+
+**Per-user connectors (CLI 0.3.9).** `railcode connector link <provider> --per-user [--name <n>]`
+creates a definition that holds no credential: every member connects their own account under it
+(`railcode connector connect <name>`, or the platform's connect page an app sends them to), and
+an app calling it runs on the caller's account once they approve that app. What an admin can
+and cannot do with one:
+
+- It is created **organization-wide and owned by its creator**; any holder of `connector:create`
+  can make one. Members also need `connector:create` to connect — an org that revoked it from
+  members cannot use per-user apps until it is granted back.
+- Admins can **disable or delete** the definition (deleting removes every member's link and
+  approval) and narrow its allowed methods and limits, which apply on top of each link's.
+- Admins **cannot** edit its host, headers or body logging (409 — the definition's owner could
+  otherwise repoint every member's token), cannot see **whose** accounts are linked
+  (`connector list` shows only a `connections_count` and the viewer's own link), and cannot
+  connect, approve or disconnect on a member's behalf; impersonated sessions are refused.
+- The `service-connector` log stream records caller, operation and outcome for per-user calls
+  and **withholds** bodies, upstream headers and error text; the path column shows the pattern the
+  app declared, or `{withheld}`.
+- Managed agents cannot name a per-user connector, and a cron has no caller to run one as. For
+  scheduled or system work, keep an org-managed or owned connector.
 
 ## Analytics
 

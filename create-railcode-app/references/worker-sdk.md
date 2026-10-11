@@ -21,6 +21,7 @@ import { ctx, db, files, llm, agents, query, connector, email, secrets } from "@
 - [Managed agents](#managed-agents)
 - [Service connectors](#service-connectors)
 - [Connectors someone owns personally](#connectors-someone-owns-personally)
+- [Per-user connectors](#per-user-connectors)
 - [`appUsers` and `dataConnectors`](#appusers-and-dataconnectors)
 - [`email`](#email)
 - [`secrets`](#secrets)
@@ -30,7 +31,7 @@ import { ctx, db, files, llm, agents, query, connector, email, secrets } from "@
 ## `ctx` — the verified caller
 
 ```ts
-ctx.user          // { id, email, name, is_admin, roles: [{uuid, name}] } | null
+ctx.user          // { id, email, name, user_type, is_admin, seat, roles: [{uuid, name}] } | null
 ctx.trigger       // "http" | "cron"
 ctx.invocationId  // this invocation's id — your idempotency key
 ctx.waitUntil(p)  // extend past the response (deployed workers only)
@@ -50,6 +51,12 @@ if (!user.is_admin) return c.json({ error: "forbidden" }, 403);
 
 `ctx.user.roles` carries the **caller's own** roles. There is no way to list the org's full role
 set from a worker.
+
+`ctx.user.user_type` (SDK 0.5.0) is the caller's platform type: `"owner" | "admin" | "builder" |
+"viewer" | "external"`. `seat` collapses it to `"builder"` (owner/admin/builder) or `"viewer"`
+(viewer/external) — use `user_type` when you must tell an **external** person (a client or
+contractor who sees only the apps shared with them) from an internal viewer. Both are hints for
+UX; every write is still **your** check. Under `railcode dev` the local token says `owner`.
 
 ## `db` — the flat store
 
@@ -337,19 +344,91 @@ Manifest: `connectors: { "gmail-jp": ["send_email"] }` — `["*"]` for the whole
 declaration is a refusal, not pass-through.** An app declaring `gmail-jp: ["send_email"]` can
 send as that account and cannot read its inbox. Undeclared → `403`.
 
-**Linking left the app.** There is no `connect()` and no `redirect_url` to return to a frontend:
-the person runs `railcode connector link gmail` or links from the dashboard, and the row exists
-before your app names it. Do not build a connect flow.
+**Linking left the app** — for shared and owned connectors. There is no `connect()` and no
+`redirect_url` to return to a frontend: the person runs `railcode connector link gmail` or links
+from the dashboard, and the row exists before your app names it. Do not build a connect flow.
+(The one place an app *does* forward the browser is a **per-user** connector's `connectUrl`,
+below — and that is the platform's page, not an OAuth flow of your own.)
 
 **Names are not provider ids.** The row is named by whoever linked it, and when two people in one
 org hold the same provider — or the plain name is taken — it is suffixed (`gmail-jp`,
 `gmail-sebastian`). Read the name from `railcode connector list`; never assume it equals the
 provider.
 
-**Crons now work.** This is the reversal from the old model: a personal connector acted as
-`ctx.user` and returned `409` under cron, which has no user. A connector's credential belongs to
-the **row**, so a scheduled route can call one. Access is still checked against the app's
-declaration and the row's sharing.
+**Crons now work** — for shared and owned connectors. A connector's credential belongs to the
+**row**, so a scheduled route can call one. Access is still checked against the app's
+declaration and the row's sharing. The exception is a **per-user** connector, which has no
+credential of its own and refuses under cron (`connector_needs_user`).
+
+## Per-user connectors
+
+A connector can be **per-user** (CLI 0.3.9, SDK 0.5.0): one name, no credential of its own, and
+each member connects their **own** account under it. A call that names it goes out on the
+*caller's* account. Use one when every person should act as themselves (their own meetings,
+inbox, calendar); use a shared or owned connector when one account serves everyone, and for
+anything that runs without a person.
+
+**Nothing changes in the manifest or the call site.** `connectors: { granola: [list_meetings] }`
+and `connector("granola").call("list_meetings", args)` are the same as for a shared row. What
+changes is that a call can be **refused** until the caller has done two things on the platform's
+connect page: connected their account, and approved *this app* for the operations its manifest
+declares. That refusal is a 409 with `ApiError.connectionRequired` set:
+
+```ts
+import { ApiError, connector } from "@railcode/sdk";
+
+app.onError((err, c) => {
+  if (err instanceof ApiError && err.connectionRequired) {
+    // { connector, reason: "not_connected" | "consent_required", connectUrl }
+    const back = encodeURIComponent(c.req.url);
+    return c.json({ connect: `${err.connectionRequired.connectUrl}&return_to=${back}` }, 409);
+  }
+  throw err;
+});
+```
+
+The frontend sends the browser to that URL; the platform page links the account, asks for
+approval, and returns to `return_to` (validated server-side to the app's own origin — anything
+else lands on the app's home). **Never build an OAuth URL yourself**, and never ask the person to
+paste a token: there is nothing for the app to store.
+
+Rules that follow from "the caller's account":
+
+- **No caller, no call.** A cron route (`ctx.user === null`) gets `err.code === "connector_needs_user"`.
+  Schedule that work on an owned connector instead.
+- **Approval is per app and per operation list.** A redeploy that declares *more* on the connector
+  is refused for the new operations until the member approves again; one that declares less keeps
+  working. Approval is withdrawn when the member disconnects.
+- **Never under impersonation.** An admin acting as a member gets 403, on every plane.
+- **Managed agents cannot use one.** An agent manifest naming a per-user connector is rejected.
+- **Logs keep no content.** For per-user calls the platform records caller, operation and outcome,
+  and withholds bodies, headers and upstream error text.
+
+Two diagnostics, both only meaningful under a ratified `run_as: app` manifest that declares the
+connector:
+
+```ts
+const granola = connector("granola");
+const connection = await granola.connection();   // local DB only, no provider request
+// { status: "not_connected" | "linking" | "consent_required" | "ready",
+//   credentialMode: "shared" | "per_user", linked, consented, connectUrl }
+
+if (connection.status === "ready") {
+  const health = await granola.checkHealth();     // one read-only probe at the provider
+  // { status: "healthy" | "reauth_required" | "permission_denied" | "unreachable"
+  //           | "unsupported" | "inconclusive", checkedAt, upstreamStatus, connectUrl }
+}
+```
+
+`connection()` is what a settings page renders ("Connect your Granola" vs "Connected as …");
+a shared connector reports `ready` with `linked` and `consented` true. `checkHealth()` is
+opt-in and costs an upstream request; `unsupported` means the provider has no probe path, not
+that anything is wrong. Both are advisory — still handle the call-time 409. Under `railcode dev`
+they forward to the **deployed** app's manifest, so deploy once before testing them.
+
+**Which kind am I holding?** `railcode connector list` shows a `mode` column (`per-user` /
+`shared`) when any per-user row exists; `railcode connector status <name> --app <slug>` shows
+whether *you* connected and approved the app. From the worker, `connection().credentialMode`.
 
 ## `appUsers` and `dataConnectors`
 
@@ -409,8 +488,13 @@ try {
 }
 ```
 
-Statuses worth handling by name: `403` undeclared authority, `409` not-connected or
-cron-incompatible, `429` a daily cap (typed quota).
+`err.code` (SDK 0.5.0) is the backend's machine-readable code when the body carries one —
+`connection_required`, `connector_needs_user`, … — and `err.connectionRequired` is set only for a
+per-user connector that needs the caller to connect or approve (see
+[Per-user connectors](#per-user-connectors)). Both are `undefined` otherwise.
+
+Statuses worth handling by name: `403` undeclared authority, `409` not-connected,
+consent-required or cron-incompatible (read `err.code`), `429` a daily cap (typed quota).
 
 ## Authority: the manifest
 

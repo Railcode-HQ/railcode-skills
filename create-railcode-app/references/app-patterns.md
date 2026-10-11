@@ -180,6 +180,30 @@ if (res.status === 429) showQuotaNotice();        // daily cap
 if (res.status === 403) showNotAllowed();         // undeclared authority
 ```
 
+For a **per-user** connector the 409 carries somewhere to go. Relay the platform's URL and let the
+browser follow it; the connect page links the account, asks the person to approve this app, and
+comes back to `return_to`:
+
+```ts
+// worker
+app.onError((err, c) => {
+  if (err instanceof ApiError && err.connectionRequired) {
+    const back = encodeURIComponent(c.req.url);
+    return c.json({ connect: `${err.connectionRequired.connectUrl}&return_to=${back}` }, 409);
+  }
+  throw err;
+});
+
+// frontend
+if (res.status === 409) {
+  const { connect } = await res.json();
+  if (connect) window.location.assign(connect);   // platform page, not your OAuth
+}
+```
+
+Do not cache "connected": approval can be withdrawn and a wider redeploy re-asks, so the 409 can
+return at any time. A settings page can show state up front with `connector(name).connection()`.
+
 ### Cron routes must accept POST
 
 The scheduler dispatches **POST**. A `GET`-only route 404s on every fire and looks like a broken

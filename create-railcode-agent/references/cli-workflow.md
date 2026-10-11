@@ -49,8 +49,9 @@ railcode agent run <agent> --input '{"k":"v"}' [--trace]
   it **leaves the existing visibility alone** — the CLI only sends the key when you pass the
   flag, matching the API's own "omitted = don't touch" contract. `agent show`/`list` print
   `visibility`, and `show` prints an `Owner:` line for a `personal` agent. See
-  [manifest-tools.md](manifest-tools.md) for what `visibility: personal` unlocks
-  (`tools.personal_connectors`) and the ownership model.
+  [manifest-tools.md](manifest-tools.md) for the ownership model; `personal` no longer
+  unlocks any tool key (`tools.personal_connectors` was removed in CLI 0.3.0), it only
+  restricts who can invoke and manage the agent.
 - `delete` archives the agent and keeps run history. It prompts on a TTY; `--yes` is required
   non-interactively.
 - `run` and `test` accept either `--input '<json>'` or `--input-file <path>`, never both. The

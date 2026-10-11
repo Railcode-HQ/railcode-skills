@@ -355,6 +355,13 @@ truncated at a size limit (`resp.truncated`).
 into ordinary connectors: an account someone links is an org row with an `owner` and an
 `access_mode`, reached through the same `connector()` global a shared credential uses.
 
+The closest living relative is a **per-user connector** (2026-10): one name, each member's own
+account, with per-app approval. A v1 app can call one through the same `connector(name)` global,
+but the browser SDK has no `connectionRequired` getter — the refusal is a plain **409** whose
+body is `{ detail: { code: "connection_required", connector, reason, connect_url } }`; send the
+browser to `connect_url` (plus `&return_to=`). Read [worker-sdk.md](worker-sdk.md#per-user-connectors)
+for the model; the rules (no crons, approval per app) are the same.
+
 `personalConnections` is **still bound on `window`**, deliberately — a v1 bundle's call sites are
 frozen and deleting the object would turn each one into `undefined is not a function`, thrown in
 the browser before any request left it. Instead every method still issues its old request and the
