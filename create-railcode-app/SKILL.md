@@ -19,8 +19,8 @@ npm view railcode version
 ```
 
 If the skill changes, re-read this file from the top. If npm is unreachable, say so and do not
-claim the guidance is current. This version was written against **CLI 0.3.9** and
-**`@railcode/sdk` 0.5.0** (both confirmed published 2026-10-11).
+claim the guidance is current. This version was written against **CLI 0.3.10** and
+**`@railcode/sdk` 0.5.1** (both confirmed published 2026-10-28).
 
 **0.3.0 is the floor this document assumes.** It is where personal connectors were folded into
 `railcode connector` (see [Breaking Changes](#breaking-changes)). On an older binary the
@@ -75,6 +75,14 @@ first. **When a user reports that something which used to work now fails, read t
 debugging** — the platform's own error messages are written to be the fix instructions, and
 the entry below tells you how to act on them. Add an entry here whenever a change ships that
 an existing app cannot survive untouched.
+
+### Public apps — CLI 0.3.10, `@railcode/sdk` 0.5.1 (not breaking, but reverses one rule)
+
+An owner or org admin can now make an app **public** (`railcode apps set-access <app> --public
+on`, or the Access page, where the instance offers it). `ctx.user` is then `null` for guests as
+well as for cron, so "a null caller is the scheduler" no longer holds: use `ctx.isGuest` or
+`ctx.trigger`. Gate member-only routes before anyone turns it on — see
+[app-patterns.md](references/app-patterns.md#public-apps).
 
 ### Per-user connectors — CLI 0.3.9, `@railcode/sdk` 0.5.0 (not breaking, but reverses two rules)
 
@@ -459,7 +467,7 @@ org — reach **every** worker route with `ctx.user === null` and `ctx.isGuest =
 whatever the manifest grants (`llm`, `email`, saved queries, connectors) on the org's bill. Gate
 member-only routes on `ctx.user` before anyone turns it on, and never read a null caller as
 "this is cron" — check `ctx.trigger`. See
-[app-patterns.md](references/app-patterns.md#public-apps). (Needs the release after CLI 0.3.9 / SDK 0.5.0, on an instance with
+[app-patterns.md](references/app-patterns.md#public-apps). (Needs CLI 0.3.10+ / SDK 0.5.1+, on an instance with
 public access enabled.)
 
 **Give every top-level section its own path** (`/companies`, `/companies/acme`) — never keep

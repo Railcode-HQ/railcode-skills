@@ -445,7 +445,7 @@ Authoring the agent is the `create-railcode-agent` skill's job; the worked examp
 ## Public apps
 
 An owner or org admin can make an app **public**: anyone with the link opens it without signing
-in (`railcode apps set-access <app> --public on`, or the Access page; the release after CLI 0.3.9 / SDK 0.5.0, on an instance
+in (`railcode apps set-access <app> --public on`, or the Access page; CLI 0.3.10+ / SDK 0.5.1+, on an instance
 that offers it). Then strangers reach **every** worker route:
 
 - Signed-out visitors and people signed into **another org** arrive with `ctx.user === null`

@@ -11,7 +11,7 @@
 - Validate the app authority manifest
 
 Use this reference for exact Railcode CLI behavior relevant to building, testing, and
-deploying an app on the **multi-tenant** Railcode platform. Written against **CLI 0.3.9**. For managed agents use
+deploying an app on the **multi-tenant** Railcode platform. Written against **CLI 0.3.10**. For managed agents use
 `$create-railcode-agent`; for organization administration use `$manage-railcode-org`.
 
 The CLI ships as the npm package **`railcode`**. The app-building subset is:
@@ -682,7 +682,7 @@ railcode apps set-access <app> --public off
 `--public on` warns about what guests can reach and asks for confirmation; non-interactive
 sessions must pass `--yes`. Without `--mode` it keeps the current audience. Only turn it on
 after the worker gates member-only routes (see
-[app-patterns.md](app-patterns.md#public-apps)). Needs the release after CLI 0.3.9 / SDK 0.5.0 and an instance that offers
+[app-patterns.md](app-patterns.md#public-apps)). Needs CLI 0.3.10+ / SDK 0.5.1+ and an instance that offers
 public access; `railcode apps access` shows `public: ON` while it applies.
 Modes: `organization` (every org member, the default), `private` (owners + editors),
 `restricted` (owners + editors, plus explicitly-granted members). Org admins/owners bypass

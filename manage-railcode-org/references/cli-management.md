@@ -46,7 +46,7 @@ railcode apps delete <app> [--yes]
 `<app>` is a slug or UUID. Access modes are `organization` (every org member), `private`
 (owners), and `restricted` (owners plus explicit members). Org admins/owners bypass per-app
 access. `set-access`, `transfer`, `archive`/`unarchive`, and `delete` need app manage rights.
-**Public access** (`--public on`, the release after CLI 0.3.9 / SDK 0.5.0) is separate from the mode: anyone with the link
+**Public access** (`--public on`, CLI 0.3.10+ / SDK 0.5.1+) is separate from the mode: anyone with the link
 can open the app and call its backend without signing in, with `ctx.user === null`, and their
 usage is billed to the org. Before turning it on, confirm with the app's builder that its
 worker gates member-only routes; the CLI warns and asks (`--yes` when non-interactive).

@@ -38,7 +38,7 @@ ctx.waitUntil(p)  // extend past the response (deployed workers only)
 `ctx.user` is **unforgeable**. It was verified at the platform gate and embedded in the
 invocation token; app code cannot fake its caller. It is `null` on cron triggers and for
 **guests of a public app** — signed-out visitors and people signed into another org.
-`ctx.isGuest` tells the two apart (the release after CLI 0.3.9 / SDK 0.5.0):
+`ctx.isGuest` tells the two apart (CLI 0.3.10+ / SDK 0.5.1+):
 
 | Caller | `ctx.user` | `ctx.isGuest` | `ctx.trigger` |
 |---|---|---|---|
