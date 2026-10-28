@@ -1,7 +1,7 @@
 ---
 name: create-railcode-app
 description: Build, modify, debug, test, and deploy Railcode apps end-to-end. Use when creating a Railcode app from an idea, scaffolding with the Railcode CLI, writing a backend worker with @railcode/sdk, wiring a frontend to worker routes, declaring app authority, testing with railcode dev, migrating a legacy v1 app to apps v2, maintaining an existing v1 browser-SDK app, adding to a v1 app something it cannot do (a secret, a backend, a cron, authorization that must hold), or deploying. Do not use for managed-agent authoring or general organization administration.
-version: 0.3.8
+version: 0.3.9
 ---
 
 # Create Railcode App
@@ -19,8 +19,8 @@ npm view railcode version
 ```
 
 If the skill changes, re-read this file from the top. If npm is unreachable, say so and do not
-claim the guidance is current. This version was written against **CLI 0.3.9** and
-**`@railcode/sdk` 0.5.0** (both confirmed published 2026-10-11).
+claim the guidance is current. This version was written against **CLI 0.3.10** and
+**`@railcode/sdk` 0.5.1** (both confirmed published 2026-10-28).
 
 **0.3.0 is the floor this document assumes.** It is where personal connectors were folded into
 `railcode connector` (see [Breaking Changes](#breaking-changes)). On an older binary the
@@ -75,6 +75,14 @@ first. **When a user reports that something which used to work now fails, read t
 debugging** — the platform's own error messages are written to be the fix instructions, and
 the entry below tells you how to act on them. Add an entry here whenever a change ships that
 an existing app cannot survive untouched.
+
+### Public apps — CLI 0.3.10, `@railcode/sdk` 0.5.1 (not breaking, but reverses one rule)
+
+An owner or org admin can now make an app **public** (`railcode apps set-access <app> --public
+on`, or the Access page, where the instance offers it). `ctx.user` is then `null` for guests as
+well as for cron, so "a null caller is the scheduler" no longer holds: use `ctx.isGuest` or
+`ctx.trigger`. Gate member-only routes before anyone turns it on — see
+[app-patterns.md](references/app-patterns.md#public-apps).
 
 ### Per-user connectors — CLI 0.3.9, `@railcode/sdk` 0.5.0 (not breaking, but reverses two rules)
 
@@ -434,7 +442,7 @@ surface that fits:
 
 | Need | Worker SDK surface |
 |---|---|
-| Who is calling | `ctx.user` (verified; `null` only on cron) |
+| Who is calling | `ctx.user` (verified; `null` on cron and for guests of a public app — `ctx.isGuest`) |
 | Records, settings, drafts | `db` — one flat store; you own partitioning |
 | Files | `files.put/get/url/urls/list/delete` |
 | Database reads | `query()` / `savedQueries()` by default; `data()`/`postgres()`/`bigquery()`/`turso()` only when asked |
@@ -452,6 +460,15 @@ implicitly any more: `db` is one flat store, so "per-user" means *you* key by `c
 
 **Never trust a value from the request body for identity or ownership.** Read it from
 `ctx.user`. The one thing a v2 worker gets for free is a caller it can believe.
+
+**A public app serves strangers too.** An owner or org admin can turn on *public access*
+(anyone with the link, no sign-in). Then signed-out visitors — and people signed into another
+org — reach **every** worker route with `ctx.user === null` and `ctx.isGuest === true`, using
+whatever the manifest grants (`llm`, `email`, saved queries, connectors) on the org's bill. Gate
+member-only routes on `ctx.user` before anyone turns it on, and never read a null caller as
+"this is cron" — check `ctx.trigger`. See
+[app-patterns.md](references/app-patterns.md#public-apps). (Needs CLI 0.3.10+ / SDK 0.5.1+, on an instance with
+public access enabled.)
 
 **Give every top-level section its own path** (`/companies`, `/companies/acme`) — never keep
 navigation in an in-memory `view` variable. Deep links, hard refresh, and back/forward must work;

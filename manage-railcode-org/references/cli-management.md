@@ -36,6 +36,7 @@ railcode apps access <app>
 railcode apps set-access <app> --mode organization
 railcode apps set-access <app> --mode private
 railcode apps set-access <app> --mode restricted --members alice@example.com,bob@example.com
+railcode apps set-access <app> --public on|off   # anyone with the link, no sign-in
 railcode apps transfer <app> --to <email|uuid>
 railcode apps archive <app>
 railcode apps unarchive <app>
@@ -45,6 +46,11 @@ railcode apps delete <app> [--yes]
 `<app>` is a slug or UUID. Access modes are `organization` (every org member), `private`
 (owners), and `restricted` (owners plus explicit members). Org admins/owners bypass per-app
 access. `set-access`, `transfer`, `archive`/`unarchive`, and `delete` need app manage rights.
+**Public access** (`--public on`, CLI 0.3.10+ / SDK 0.5.1+) is separate from the mode: anyone with the link
+can open the app and call its backend without signing in, with `ctx.user === null`, and their
+usage is billed to the org. Before turning it on, confirm with the app's builder that its
+worker gates member-only routes; the CLI warns and asks (`--yes` when non-interactive).
+`--public off` restores the mode's audience at once.
 Delete is irreversible, removes deploys and app data, prompts on a TTY, and requires `--yes`
 non-interactively.
 
