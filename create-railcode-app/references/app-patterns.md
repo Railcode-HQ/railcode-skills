@@ -16,6 +16,7 @@ SDK surface itself see [worker-sdk.md](worker-sdk.md). For a generation-1 app se
 - [LLM](#llm)
 - [Delegating to a managed agent](#delegating-to-a-managed-agent)
 - [Cron](#cron)
+- [Public apps](#public-apps)
 - [Common pitfalls](#common-pitfalls)
 
 ## Layout by stack
@@ -439,6 +440,46 @@ Authoring the agent is the `create-railcode-agent` skill's job; the worked examp
   external side effects safe to repeat. Never promise "exactly once".
 - Caps: 5 schedules per app, 1-minute minimum.
 - A schedule pauses with a visible reason if the current deploy has no worker.
+
+
+## Public apps
+
+An owner or org admin can make an app **public**: anyone with the link opens it without signing
+in (`railcode apps set-access <app> --public on`, or the Access page; the release after CLI 0.3.9 / SDK 0.5.0, on an instance
+that offers it). Then strangers reach **every** worker route:
+
+- Signed-out visitors and people signed into **another org** arrive with `ctx.user === null`
+  and `ctx.isGuest === true`. Org members (and people the app is shared with) keep their
+  identity.
+- A guest gets the worker's full authority: the app's `db`/`files` and whatever the manifest
+  grants (`llm`, `email`, saved queries, connectors), billed to the org. A route that doesn't
+  check the caller lets anyone use the LLM, read every row, or write data.
+
+Decide per route what a guest may do, and gate the rest:
+
+```ts
+import { ctx } from "@railcode/sdk";
+
+// Everything under /api/admin needs a member.
+app.use("/api/admin/*", async (c, next) => {
+  if (!ctx.user) return c.json({ error: "sign in required" }, 401);
+  await next();
+});
+
+// A public form: guests may submit, only members may read submissions.
+app.post("/api/contact", async (c) => { /* validate + rate-limit, then db.put */ });
+app.get("/api/contact", async (c) => {
+  if (!ctx.user) return c.json({ error: "sign in required" }, 401);
+  /* ... */
+});
+```
+
+- Never treat `ctx.user === null` as "this is the scheduler" — a guest looks the same. Gate
+  cron-only work on `ctx.trigger === "cron"`.
+- Keep GET/HEAD handlers free of side effects: on a public app, links from other sites
+  can trigger them.
+- The page shows no Railcode bar to guests (`/_api/me` answers 403); render your own
+  signed-out state from `/api/me`.
 
 ## Common pitfalls
 

@@ -38,7 +38,7 @@ railcode app kv <collections|list|get|set|delete|drop> ...   Read/write the depl
 railcode app files <list|download|upload|delete> ...   Read/write the deployed app's files (owner)
 railcode apps show <app> [--json]             App details, incl. your rights and its generation
 railcode apps access <app>                    Inspect the access policy
-railcode apps set-access <app> ...            Set mode/members/editors (manage rights)
+railcode apps set-access <app> ...            Set mode/members/editors/--public (manage rights)
 railcode apps add-editor|remove-editor <app> <email|uuid>   Grant/revoke co-deploy rights
 railcode apps add-viewer|remove-viewer <app> <email|uuid>   Grant/revoke view rights (restricted, or an external user)
 railcode ci github [--repo <owner/name>] [--branch <name>] [--yes]   Deploy from GitHub Actions
@@ -676,7 +676,14 @@ railcode apps access <app>                          # show the current mode + pe
 railcode apps set-access <app> --mode private       # or: organization | restricted
 railcode apps set-access <app> --mode restricted --members alice@x.io,bob@x.io
 railcode apps set-access <app> --mode organization --editors dana@x.io   # editors: any mode
+railcode apps set-access <app> --public on          # anyone with the link, no sign-in (asks first)
+railcode apps set-access <app> --public off
 ```
+`--public on` warns about what guests can reach and asks for confirmation; non-interactive
+sessions must pass `--yes`. Without `--mode` it keeps the current audience. Only turn it on
+after the worker gates member-only routes (see
+[app-patterns.md](app-patterns.md#public-apps)). Needs the release after CLI 0.3.9 / SDK 0.5.0 and an instance that offers
+public access; `railcode apps access` shows `public: ON` while it applies.
 Modes: `organization` (every org member, the default), `private` (owners + editors),
 `restricted` (owners + editors, plus explicitly-granted members). Org admins/owners bypass
 per-app access entirely.

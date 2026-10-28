@@ -1,7 +1,7 @@
 ---
 name: create-railcode-app
 description: Build, modify, debug, test, and deploy Railcode apps end-to-end. Use when creating a Railcode app from an idea, scaffolding with the Railcode CLI, writing a backend worker with @railcode/sdk, wiring a frontend to worker routes, declaring app authority, testing with railcode dev, migrating a legacy v1 app to apps v2, maintaining an existing v1 browser-SDK app, adding to a v1 app something it cannot do (a secret, a backend, a cron, authorization that must hold), or deploying. Do not use for managed-agent authoring or general organization administration.
-version: 0.3.8
+version: 0.3.9
 ---
 
 # Create Railcode App
@@ -434,7 +434,7 @@ surface that fits:
 
 | Need | Worker SDK surface |
 |---|---|
-| Who is calling | `ctx.user` (verified; `null` only on cron) |
+| Who is calling | `ctx.user` (verified; `null` on cron and for guests of a public app — `ctx.isGuest`) |
 | Records, settings, drafts | `db` — one flat store; you own partitioning |
 | Files | `files.put/get/url/urls/list/delete` |
 | Database reads | `query()` / `savedQueries()` by default; `data()`/`postgres()`/`bigquery()`/`turso()` only when asked |
@@ -452,6 +452,15 @@ implicitly any more: `db` is one flat store, so "per-user" means *you* key by `c
 
 **Never trust a value from the request body for identity or ownership.** Read it from
 `ctx.user`. The one thing a v2 worker gets for free is a caller it can believe.
+
+**A public app serves strangers too.** An owner or org admin can turn on *public access*
+(anyone with the link, no sign-in). Then signed-out visitors — and people signed into another
+org — reach **every** worker route with `ctx.user === null` and `ctx.isGuest === true`, using
+whatever the manifest grants (`llm`, `email`, saved queries, connectors) on the org's bill. Gate
+member-only routes on `ctx.user` before anyone turns it on, and never read a null caller as
+"this is cron" — check `ctx.trigger`. See
+[app-patterns.md](references/app-patterns.md#public-apps). (Needs the release after CLI 0.3.9 / SDK 0.5.0, on an instance with
+public access enabled.)
 
 **Give every top-level section its own path** (`/companies`, `/companies/acme`) — never keep
 navigation in an in-memory `view` variable. Deep links, hard refresh, and back/forward must work;

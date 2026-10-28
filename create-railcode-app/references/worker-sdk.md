@@ -30,19 +30,28 @@ import { ctx, db, files, llm, agents, query, connector, email, secrets } from "@
 ```ts
 ctx.user          // { id, email, name, user_type, is_admin, seat, roles: [{uuid, name}] } | null
 ctx.trigger       // "http" | "cron"
+ctx.isGuest       // true only for a signed-out visitor of a PUBLIC app (http, no caller)
 ctx.invocationId  // this invocation's id — your idempotency key
 ctx.waitUntil(p)  // extend past the response (deployed workers only)
 ```
 
 `ctx.user` is **unforgeable**. It was verified at the platform gate and embedded in the
-invocation token; app code cannot fake its caller. It is `null` **only** on cron triggers.
+invocation token; app code cannot fake its caller. It is `null` on cron triggers and for
+**guests of a public app** — signed-out visitors and people signed into another org.
+`ctx.isGuest` tells the two apart (the release after CLI 0.3.9 / SDK 0.5.0):
+
+| Caller | `ctx.user` | `ctx.isGuest` | `ctx.trigger` |
+|---|---|---|---|
+| Member, or someone the app is shared with (incl. External) | the user | `false` | `"http"` |
+| Guest of a public app | `null` | `true` | `"http"` |
+| Cron | `null` | `false` | `"cron"` |
 
 This is the foundation of every authorization decision you write. Never take identity or
 ownership from the request body.
 
 ```ts
 const user = ctx.user;
-if (!user) return c.json({ error: "cron cannot do this" }, 409);
+if (!user) return c.json({ error: "sign in required" }, 401);   // guest (or cron)
 if (!user.is_admin) return c.json({ error: "forbidden" }, 403);
 ```
 
